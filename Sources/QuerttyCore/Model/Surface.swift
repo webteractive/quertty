@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SplitDirection: String, Codable, Sendable {
+public enum SplitDirection: String, Codable, Sendable, Equatable {
     case horizontal
     case vertical
 }
