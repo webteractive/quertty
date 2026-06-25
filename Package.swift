@@ -7,17 +7,8 @@ let package = Package(
     products: [
         .library(name: "QuerttyCore", targets: ["QuerttyCore"]),
     ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-testing.git", from: "0.0.0"),
-    ],
     targets: [
         .target(name: "QuerttyCore"),
-        .testTarget(
-            name: "QuerttyCoreTests",
-            dependencies: [
-                "QuerttyCore",
-                .product(name: "Testing", package: "swift-testing"),
-            ]
-        ),
+        .testTarget(name: "QuerttyCoreTests", dependencies: ["QuerttyCore"]),
     ]
 )
