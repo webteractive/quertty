@@ -6,7 +6,7 @@
 
 **Architecture:** Three SPM targets — `QuerttyCore` (pure Swift, no UI/C imports; the portable brain), `GhosttyKit` (the only module that touches libghostty's C API), and `quertty` (the macOS SwiftUI/AppKit app). This plan delivers all of `QuerttyCore`'s foundation plus the Phase 0 spike proving the GhosttyKit↔libghostty seam. Phase 1 UI, AI-detection, and CLI subsystems are deliberately deferred to follow-up plans written against the C API this plan pins.
 
-**Tech Stack:** Swift 6, Swift Package Manager, Swift Testing (`import Testing`), SwiftUI + AppKit (macOS 14+), full libghostty (vendored & pinned), Metal.
+**Tech Stack:** Swift 6, Swift Package Manager, Swift Testing (via the `apple/swift-testing` package), SwiftUI + AppKit (macOS 14+), full libghostty (vendored & pinned), Metal.
 
 ## Global Constraints
 
@@ -14,7 +14,7 @@
 - **Layer rule:** `QuerttyCore` imports no UI frameworks and no C library. `GhosttyKit` is the only module that imports libghostty. The app target is the only one importing SwiftUI/AppKit.
 - **Ghostty layer:** Full **libghostty** (renderer included), NOT `libghostty-vt`. We render nothing ourselves.
 - **libghostty pinning:** Vendored at a single known Ghostty commit, recorded verbatim in `vendor/GHOSTTY_COMMIT`. Never float the dependency.
-- **Testing:** Use Swift Testing (`import Testing`, `@Test`, `#expect`). `QuerttyCore` carries the test weight; all its logic is unit-tested. GhosttyKit/app are smoke/manually verified.
+- **Testing:** Use **Swift Testing** (`import Testing`, `@Test`, `#expect`) via the external `apple/swift-testing` SPM package. This is REQUIRED on this machine: only Command Line Tools are installed (no full Xcode), so `swift test` ships neither XCTest nor a bundled `Testing` module — the external package is the only headless-runnable option. `Package.swift` declares the dependency and each test target depends on the `Testing` product. `QuerttyCore` carries the test weight; all its logic is unit-tested. GhosttyKit/app are smoke/manually verified.
 - **Commits:** Frequent, one per task minimum. Do not push without the owner's say-so.
 
 ---
@@ -42,9 +42,21 @@ let package = Package(
     products: [
         .library(name: "QuerttyCore", targets: ["QuerttyCore"]),
     ],
+    dependencies: [
+        // Required: only Command Line Tools are installed (no full Xcode), so the
+        // toolchain's XCTest / bundled Testing module aren't available to `swift test`.
+        // The self-contained swift-testing package is the only headless-runnable option.
+        .package(url: "https://github.com/apple/swift-testing.git", from: "0.0.0"),
+    ],
     targets: [
         .target(name: "QuerttyCore"),
-        .testTarget(name: "QuerttyCoreTests", dependencies: ["QuerttyCore"]),
+        .testTarget(
+            name: "QuerttyCoreTests",
+            dependencies: [
+                "QuerttyCore",
+                .product(name: "Testing", package: "swift-testing"),
+            ]
+        ),
     ]
 )
 ```
@@ -705,7 +717,13 @@ Add to `targets:` (adjust `unsafeFlags` paths to the artifact path recorded in T
         .unsafeFlags(["-L", "vendor/ghostty/zig-out/lib", "-lghostty"])  // artifact from Task 5
     ]
 ),
-.testTarget(name: "GhosttyKitTests", dependencies: ["GhosttyKit"]),
+.testTarget(
+    name: "GhosttyKitTests",
+    dependencies: [
+        "GhosttyKit",
+        .product(name: "Testing", package: "swift-testing"),
+    ]
+),
 ```
 
 And add `GhosttyKit` to `products` if it should be importable by the app.

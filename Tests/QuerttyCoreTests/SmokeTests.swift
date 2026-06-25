@@ -1,9 +1,7 @@
 // Tests/QuerttyCoreTests/SmokeTests.swift
-import XCTest
+import Testing
 @testable import QuerttyCore
 
-final class SmokeTests: XCTestCase {
-    func testModuleHasVersion() {
-        XCTAssertEqual(QuerttyCore.version, "0.0.1")
-    }
+@Test func moduleHasVersion() {
+    #expect(QuerttyCore.version == "0.0.1")
 }
