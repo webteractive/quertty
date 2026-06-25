@@ -57,7 +57,7 @@ public struct Layout: Codable, Sendable, Equatable {
 
     // MARK: - Recursion helpers
 
-    /// Bottom-up rewrite: apply `rewrite` to each node; if it returns a
+    /// Top-down (pre-order) rewrite: apply `rewrite` to each node; if it returns a
     /// replacement, use it, else recurse into children.
     private static func transform(
         _ node: SurfaceNode,
@@ -85,8 +85,8 @@ public struct Layout: Codable, Sendable, Equatable {
         case .leaf:
             return node
         case let .split(direction, ratio, first, second):
-            if first.isLeaf(surfaceID) { changed = true; return collapse(second, removing: surfaceID, changed: &changed) }
-            if second.isLeaf(surfaceID) { changed = true; return collapse(first, removing: surfaceID, changed: &changed) }
+            if first.isLeaf(surfaceID) { changed = true; return second }
+            if second.isLeaf(surfaceID) { changed = true; return first }
             return .split(direction: direction, ratio: ratio,
                           first: collapse(first, removing: surfaceID, changed: &changed),
                           second: collapse(second, removing: surfaceID, changed: &changed))
