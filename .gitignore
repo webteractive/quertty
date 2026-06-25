@@ -18,6 +18,8 @@ DerivedData/
 # Vendored libghostty build artifacts
 vendor/**/zig-out/
 vendor/**/zig-cache/
+vendor/**/GhosttyKit.xcframework
+vendor/**/.zig-cache/
 
 # Misc
 *.log
