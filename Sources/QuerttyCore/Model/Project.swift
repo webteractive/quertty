@@ -1,13 +1,26 @@
 import Foundation
 
+public struct Tab: Codable, Sendable, Equatable, Identifiable {
+    public let id: UUID
+    public var title: String
+    public var layout: Layout
+
+    public init(id: UUID = UUID(), title: String, layout: Layout) {
+        self.id = id
+        self.title = title
+        self.layout = layout
+    }
+}
+
 public struct Session: Codable, Sendable, Equatable, Identifiable {
     public let id: UUID
     public var title: String
-    // tabs added in Task 3 once Layout exists.
+    public var tabs: [Tab]
 
-    public init(id: UUID = UUID(), title: String) {
+    public init(id: UUID = UUID(), title: String, tabs: [Tab] = []) {
         self.id = id
         self.title = title
+        self.tabs = tabs
     }
 }
 
