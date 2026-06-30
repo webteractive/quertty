@@ -65,6 +65,12 @@ final class TerminalViewController: NSViewController {
     /// KVO token for observing `window.firstResponder`.
     private var firstResponderObservation: NSKeyValueObservation?
 
+    /// Called after any change that affects persisted workspace state (tab
+    /// add/close, split/close, project add/pin, rename). The owner (AppDelegate)
+    /// uses this to autosave, so the on-disk workspace always reflects the
+    /// current arrangement — surviving crashes/force-quits, not just clean quit.
+    var onWorkspaceDidChange: (() -> Void)?
+
     // MARK: - View lifecycle
 
     override func loadView() {
@@ -186,6 +192,7 @@ final class TerminalViewController: NSViewController {
             guard let self else { return }
             self.workspace.togglePin(at: index)
             self.refreshSidebar()
+            self.onWorkspaceDidChange?()
         }
 
         sidebar.onAddProject = { [weak self] in
@@ -384,6 +391,7 @@ final class TerminalViewController: NSViewController {
         tabList.setManualTitle(trimmed.isEmpty ? nil : trimmed, at: index)
         refreshTabBar()
         refreshSidebar()
+        onWorkspaceDidChange?()
     }
 
     // MARK: - Private helper
@@ -477,6 +485,10 @@ final class TerminalViewController: NSViewController {
             }
         )
         registry.prune(keeping: allIDs)
+
+        // Any structural change (tab add/close, split/close, project add, switch)
+        // funnels through here — autosave so disk reflects the current layout.
+        onWorkspaceDidChange?()
     }
 
     // MARK: - Helpers

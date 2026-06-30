@@ -48,6 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tvc = TerminalViewController()
         restoreWorkspace(into: tvc)
         terminalViewController = tvc
+        // Autosave on every structural change (debounced), so the on-disk
+        // workspace always reflects the current layout — not just on clean quit.
+        tvc.onWorkspaceDidChange = { [weak self] in self?.scheduleSave() }
 
         let window = QuerttyWindow(
             contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -95,9 +98,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Pending debounced autosave (coalesces rapid structural changes into one write).
+    private var pendingSave: DispatchWorkItem?
+
+    /// Schedule a debounced autosave. Multiple changes within the window collapse
+    /// to a single disk write.
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.saveWorkspace() }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
     /// Snapshot the current workspace and write it to disk.
     /// Errors are swallowed so a full disk or sandbox denial never crashes the quit path.
     private func saveWorkspace() {
+        pendingSave?.cancel()
+        pendingSave = nil
         guard let tvc = terminalViewController else { return }
         let workspace = SessionSnapshot.workspace(from: tvc.currentWorkspace)
         try? workspaceStore.save(workspace)
