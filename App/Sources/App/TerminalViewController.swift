@@ -1,5 +1,4 @@
 import AppKit
-import GhosttyTerminal
 import QuerttyCore
 import QuerttyGhostty
 
@@ -75,12 +74,6 @@ final class TerminalViewController: NSViewController {
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
         }
-    }
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        // SurfaceNodeView / TerminalView handle their own layout via
-        // Auto Layout + AppTerminalView.setFrameSize.
     }
 
     // MARK: - Tree rendering

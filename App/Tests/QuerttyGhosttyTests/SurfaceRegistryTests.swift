@@ -7,11 +7,22 @@ import XCTest
 import QuerttyCore
 @testable import QuerttyGhostty
 
-// MARK: - Mock
+// MARK: - Mocks
 
 /// A lightweight stand-in that satisfies `TerminalControlling` without
 /// touching libghostty.
 final class MockTerminalController: TerminalControlling {}
+
+/// A counting NSView subclass used to verify that the view factory is called
+/// exactly once per live surface (and again after pruning).
+final class CountingView: NSView {
+    static var creationCount = 0
+    override init(frame: NSRect) {
+        CountingView.creationCount += 1
+        super.init(frame: frame)
+    }
+    required init?(coder: NSCoder) { fatalError("not used in tests") }
+}
 
 // MARK: - Tests
 
@@ -44,6 +55,36 @@ final class SurfaceRegistryTests: XCTestCase {
         _ = reg.controller(for: s2)
         reg.prune(keeping: [s1.id])
         XCTAssertEqual(reg.liveIDs, [s1.id])
+    }
+
+    // MARK: - View-preservation invariant (Task 3)
+
+    /// The central invariant of Task 3: `terminalView(for:)` must return the
+    /// *same* NSView instance on every call for the same surface so that the
+    /// live PTY (which lives inside the view) is never destroyed by a re-render.
+    /// After `prune(keeping:[])` the old view is released and the next call
+    /// must produce a *new* view (factory counter increments).
+    func testTerminalViewIsPreservedAcrossRepeatedCalls() {
+        CountingView.creationCount = 0
+        let reg = SurfaceRegistry(
+            controllerFactory: { _ in MockTerminalController() },
+            viewFactory: { _, _ in CountingView(frame: .zero) }
+        )
+        let s = Surface(workingDir: "/tmp")
+
+        // First call creates one view.
+        let v1 = reg.terminalView(for: s)
+        XCTAssertEqual(CountingView.creationCount, 1, "factory should be called exactly once on first access")
+
+        // Repeated call must return the identical object — not a new one.
+        let v2 = reg.terminalView(for: s)
+        XCTAssertTrue(v1 === v2, "registry must return the same NSView instance on repeated calls for the same surface")
+        XCTAssertEqual(CountingView.creationCount, 1, "factory must not be called again for an already-registered surface")
+
+        // After pruning, the next call must create a fresh view.
+        reg.prune(keeping: [])
+        _ = reg.terminalView(for: s)
+        XCTAssertEqual(CountingView.creationCount, 2, "factory must create a new view after the old one was pruned")
     }
 
     func testNewSurfaceAfterPruneGetsNewController() {

@@ -96,6 +96,13 @@ public final class SurfaceRegistry {
         },
         viewFactory: @escaping @MainActor (Surface, any TerminalControlling) -> NSView = { surface, ctrl in
             let v = TerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+            // The default controllerFactory always produces a real `TerminalController`,
+            // so this cast succeeds in production.  A test that injects a non-
+            // TerminalController mock will hit the else-branch and leave `v.controller`
+            // unconfigured — that is intentional and acceptable for headless tests
+            // (the mock never calls into libghostty, so the unconfigured view is fine).
+            // Do NOT replace this with a fatalError; the no-op path is relied upon by
+            // tests that only care about view identity, not controller wiring.
             if let tc = ctrl as? TerminalController {
                 v.controller = tc
             }
