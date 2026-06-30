@@ -78,6 +78,12 @@ final class TerminalViewController: NSViewController {
         setupTabBar()
         rebuildSurfaceNodeView()
         refreshSidebar()
+
+        // Refresh the tab bar whenever any live surface reports a title or
+        // working-directory change so the active tab's name stays current.
+        registry.onTitleChange = { [weak self] _ in
+            self?.refreshTabBar()
+        }
     }
 
     override func viewDidAppear() {
@@ -205,9 +211,28 @@ final class TerminalViewController: NSViewController {
     }
 
     /// Syncs the tab bar UI state with the active project's TabList.
+    ///
+    /// For each tab, computes its display title via `TabTitle.display` using:
+    /// - the tab's manual title (if set),
+    /// - the live terminal title of the tab's focused surface (from the registry),
+    /// - the live working directory of that surface (registry first, then the
+    ///   static `Surface.workingDir` as a fallback),
+    /// - and a positional fallback ("Tab N").
     func refreshTabBar() {
         let tabList = workspace.activeTabList
-        let titles = tabList.trees.indices.map { tabList.title(at: $0) }
+        let titles: [String] = tabList.trees.indices.map { idx in
+            let tree = tabList.trees[idx]
+            let focusedSurface = tree.focusedSurface
+            let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) }
+            let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
+                ?? focusedSurface?.workingDir
+            return TabTitle.display(
+                manualTitle: tree.manualTitle,
+                focusedSurfaceTitle: surfaceTitle,
+                workingDir: workingDir,
+                index: idx
+            )
+        }
         tabBarView?.update(titles: titles, selectedIndex: tabList.activeIndex)
     }
 

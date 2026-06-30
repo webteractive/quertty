@@ -24,6 +24,7 @@
 //   Swift's strict concurrency checks are satisfied.
 
 import AppKit
+import Combine
 import Foundation
 import GhosttyTerminal
 import QuerttyCore
@@ -42,16 +43,26 @@ extension TerminalController: TerminalControlling {}
 
 // MARK: - TerminalViewPair
 
-/// A retained pair of controller + view for one logical surface.
+/// A retained pair of controller + view (+ observable state) for one logical surface.
 ///
 /// The **view** is the persistent unit: it owns the `TerminalSurfaceCoordinator`
 /// which holds the live `TerminalSurface` (PTY).  The controller is stored here
 /// so callers that only need the controller (e.g. tests) can access it without
-/// the view.
+/// the view.  `viewState` is the `ObservableObject` delegate that receives live
+/// title/workingDirectory callbacks from the terminal and publishes them via
+/// Combine.
 public struct TerminalViewPair {
     public let controller: any TerminalControlling
     /// The persistent `NSView` that renders this terminal (AppTerminalView).
     public let view: NSView
+    /// Observable state bound to this surface's terminal via its delegate.
+    /// `nil` only in tests that inject a non-`TerminalController` mock.
+    ///
+    /// IMPORTANT: this field is the SOLE strong owner of the state — the
+    /// terminal view's `delegate` slot (where it's also set) is `weak`. If this
+    /// reference is dropped, the live title/workingDirectory subscription dies
+    /// silently. Keep the pair (and thus `viewState`) retained for the surface's lifetime.
+    public let viewState: TerminalViewState?
 }
 
 // MARK: - SurfaceRegistry
@@ -75,6 +86,15 @@ public final class SurfaceRegistry {
     // MARK: - Storage
 
     private var pairs: [UUID: TerminalViewPair] = [:]
+    /// Combine cancellables keyed by surface ID — one per retained surface title subscription.
+    private var cancellables: [UUID: AnyCancellable] = [:]
+
+    // MARK: - Change callback
+
+    /// Called on the main actor whenever any live surface's title or working
+    /// directory changes.  The `UUID` is the surface ID that changed.
+    /// `TerminalViewController` installs this closure to trigger a tab-bar refresh.
+    public var onTitleChange: ((UUID) -> Void)?
 
     // MARK: - Factories
 
@@ -86,7 +106,7 @@ public final class SurfaceRegistry {
     /// Closure used to create a new `NSView` (AppTerminalView) for a surface.
     /// Receives the controller so it can be wired up immediately.
     /// Defaults to creating a properly-configured `TerminalView` with `.exec` backend.
-    private let viewFactory: @MainActor (Surface, any TerminalControlling) -> NSView
+    private let viewFactory: @MainActor (Surface, any TerminalControlling) -> (NSView, TerminalViewState?)
 
     // MARK: - Init
 
@@ -94,7 +114,7 @@ public final class SurfaceRegistry {
         controllerFactory: @escaping @MainActor (Surface) -> any TerminalControlling = { _ in
             TerminalController()
         },
-        viewFactory: @escaping @MainActor (Surface, any TerminalControlling) -> NSView = { surface, ctrl in
+        viewFactory: @escaping @MainActor (Surface, any TerminalControlling) -> (NSView, TerminalViewState?) = { surface, ctrl in
             let v = TerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
             // The default controllerFactory always produces a real `TerminalController`,
             // so this cast succeeds in production.  A test that injects a non-
@@ -103,12 +123,18 @@ public final class SurfaceRegistry {
             // (the mock never calls into libghostty, so the unconfigured view is fine).
             // Do NOT replace this with a fatalError; the no-op path is relied upon by
             // tests that only care about view identity, not controller wiring.
+            var state: TerminalViewState? = nil
             if let tc = ctrl as? TerminalController {
                 v.controller = tc
+                // Create a TerminalViewState backed by the same controller and wire
+                // it as the view's delegate so it receives title/workingDirectory callbacks.
+                let s = TerminalViewState(controller: tc)
+                v.delegate = s
+                state = s
             }
             v.configuration = TerminalSurfaceOptions(backend: .exec)
             v.translatesAutoresizingMaskIntoConstraints = false
-            return v
+            return (v, state)
         }
     ) {
         self.controllerFactory = controllerFactory
@@ -134,9 +160,23 @@ public final class SurfaceRegistry {
         pair(for: surface).view
     }
 
+    /// Returns the live terminal title for a surface's focused pane, or `nil`
+    /// if the surface has no entry yet or no state was created for it.
+    public func title(for surface: Surface) -> String? {
+        pairs[surface.id]?.viewState?.title
+    }
+
+    /// Returns the live working directory for a surface's focused pane, or `nil`
+    /// if the surface has no entry yet or no state was created for it.
+    public func workingDirectory(for surface: Surface) -> String? {
+        pairs[surface.id]?.viewState?.workingDirectory
+    }
+
     /// Removes every pair whose id is not in `ids`, allowing them to be
     /// deallocated (which tears down the PTY and ghostty surface).
     public func prune(keeping ids: Set<UUID>) {
+        let removed = pairs.keys.filter { !ids.contains($0) }
+        for id in removed { cancellables[id] = nil }
         pairs = pairs.filter { ids.contains($0.key) }
     }
 
@@ -169,9 +209,23 @@ public final class SurfaceRegistry {
             return existing
         }
         let ctrl = controllerFactory(surface)
-        let view = viewFactory(surface, ctrl)
-        let pair = TerminalViewPair(controller: ctrl, view: view)
+        let (view, state) = viewFactory(surface, ctrl)
+        let pair = TerminalViewPair(controller: ctrl, view: view, viewState: state)
         pairs[surface.id] = pair
+
+        // Notify on title + workingDirectory changes ONLY (not every @Published
+        // property on the state — bell/focus/exit-code changes shouldn't trigger a
+        // tab-bar refresh). combineLatest fires once on subscribe, then on either change.
+        if let state {
+            let id = surface.id
+            cancellables[id] = state.$title
+                .combineLatest(state.$workingDirectory)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.onTitleChange?(id)
+                }
+        }
+
         return pair
     }
 }

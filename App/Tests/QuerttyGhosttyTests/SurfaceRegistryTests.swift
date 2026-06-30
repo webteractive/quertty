@@ -68,7 +68,7 @@ final class SurfaceRegistryTests: XCTestCase {
         CountingView.creationCount = 0
         let reg = SurfaceRegistry(
             controllerFactory: { _ in MockTerminalController() },
-            viewFactory: { _, _ in CountingView(frame: .zero) }
+            viewFactory: { _, _ in (CountingView(frame: .zero), nil) }
         )
         let s = Surface(workingDir: "/tmp")
 

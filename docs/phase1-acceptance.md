@@ -1,5 +1,47 @@
 # Phase 1 Acceptance Checklist
 
+## Task 2: Auto-name tabs from focused pane's live terminal title
+
+### Manual check (PENDING USER VERIFICATION)
+
+Run the app:
+```bash
+open ~/Library/Developer/Xcode/DerivedData/quertty-giuacqmlsqkgkrdadhyyjabydjxb/Build/Products/Debug/quertty.app
+```
+
+Shell integration is required for title reporting. Ensure your shell sets the terminal
+title (e.g. via OSC 2 sequences). Ghostty's shell integration does this automatically.
+
+1. **Command updates tab name**: Open a tab. Run a titled command, e.g. `vim README.md`
+   — the tab bar should update from the shell/dir name to "vim README.md" (or similar
+   title emitted by vim via OSC 2). On quitting vim the title should revert to the
+   shell/dir title.
+2. **Bare shell falls back to workingDir**: With no titled command running, the tab
+   should display the basename of the working directory (e.g. "quertty" when `cd`'d
+   into that dir). On a brand-new pane before OSC 7 has fired, it falls back to "Tab N".
+3. **Only the focused pane's title drives the tab**: With a split view, only the
+   focused pane's terminal title is reflected in the tab name. Clicking another pane
+   updates the tab name immediately.
+4. **manualTitle (if set) takes precedence**: A tab with a manually set title ignores
+   the live terminal title entirely (tested at the unit level; manual UI test skipped
+   until a rename UI is added).
+5. **Multiple tabs are independent**: Tabs reflect their own focused surface's title.
+   Switching tabs should show different names corresponding to what is running in each.
+
+**Status: PENDING USER VERIFICATION**
+
+---
+
+### Build verification (headless)
+
+```bash
+mise exec -- tuist generate --no-open && tuist build quertty
+```
+
+Result: **Build Succeeded** (confirmed by automated build step).
+
+---
+
 ## Task 3: Recursive split rendering — SurfaceNodeView + PaneTree
 
 ### Manual check
