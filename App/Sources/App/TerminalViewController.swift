@@ -83,6 +83,7 @@ final class TerminalViewController: NSViewController {
         // working-directory change so the active tab's name stays current.
         registry.onTitleChange = { [weak self] _ in
             self?.refreshTabBar()
+            self?.refreshSidebar()
         }
     }
 
@@ -158,9 +159,21 @@ final class TerminalViewController: NSViewController {
         ])
 
         // Wire sidebar callbacks.
-        sidebar.onSelect = { [weak self] index in
+        sidebar.onSelectProject = { [weak self] index in
             guard let self else { return }
             self.workspace.select(index: index)
+            self.refreshTabBar()
+            self.rebuildSurfaceNodeView()
+            self.refreshSidebar()
+            if let focused = self.focusedTerminalView() {
+                self.view.window?.makeFirstResponder(focused)
+            }
+        }
+
+        sidebar.onSelectTab = { [weak self] projectIndex, tabIndex in
+            guard let self else { return }
+            self.workspace.select(index: projectIndex)
+            self.workspace.activeTabList.select(index: tabIndex)
             self.refreshTabBar()
             self.rebuildSurfaceNodeView()
             self.refreshSidebar()
@@ -238,8 +251,34 @@ final class TerminalViewController: NSViewController {
 
     /// Syncs the sidebar UI state with the workspace.
     func refreshSidebar() {
-        let projects = workspace.projects.map { (name: $0.name, isPinned: $0.isPinned) }
-        sidebarView?.update(projects: projects, selectedIndex: workspace.activeIndex)
+        let sidebarProjects: [SidebarProject] = workspace.projects.map { project in
+            let trees = project.tabList.trees
+            // Only provide tab titles when there are 2+ tabs (single-tab projects are plain rows).
+            let tabTitles: [String]
+            if trees.count >= 2 {
+                tabTitles = trees.indices.map { idx in
+                    let tree = trees[idx]
+                    let focusedSurface = tree.focusedSurface
+                    let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) }
+                    let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
+                        ?? focusedSurface?.workingDir
+                    return TabTitle.display(
+                        manualTitle: tree.manualTitle,
+                        focusedSurfaceTitle: surfaceTitle,
+                        workingDir: workingDir,
+                        index: idx
+                    )
+                }
+            } else {
+                tabTitles = []
+            }
+            return SidebarProject(name: project.name, isPinned: project.isPinned, tabTitles: tabTitles)
+        }
+        sidebarView?.update(
+            projects: sidebarProjects,
+            activeProject: workspace.activeIndex,
+            activeTab: workspace.activeTabList.activeIndex
+        )
     }
 
     // MARK: - Add Project via NSOpenPanel
@@ -287,6 +326,7 @@ final class TerminalViewController: NSViewController {
     @objc func newTab(_ sender: Any?) {
         workspace.activeTabList.newTab()
         refreshTabBar()
+        refreshSidebar()
         rebuildSurfaceNodeView()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
@@ -298,6 +338,7 @@ final class TerminalViewController: NSViewController {
         let tabList = workspace.activeTabList
         tabList.closeTab(at: tabList.activeIndex)
         refreshTabBar()
+        refreshSidebar()
         rebuildSurfaceNodeView()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
@@ -308,6 +349,7 @@ final class TerminalViewController: NSViewController {
     @objc func selectNextTab(_ sender: Any?) {
         workspace.activeTabList.selectNext()
         refreshTabBar()
+        refreshSidebar()
         rebuildSurfaceNodeView()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
@@ -318,6 +360,7 @@ final class TerminalViewController: NSViewController {
     @objc func selectPreviousTab(_ sender: Any?) {
         workspace.activeTabList.selectPrevious()
         refreshTabBar()
+        refreshSidebar()
         rebuildSurfaceNodeView()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
@@ -329,6 +372,7 @@ final class TerminalViewController: NSViewController {
     private func selectTab(at index: Int) {
         workspace.activeTabList.select(index: index)
         refreshTabBar()
+        refreshSidebar()
         rebuildSurfaceNodeView()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)

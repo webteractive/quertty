@@ -227,3 +227,32 @@ mise exec -- tuist generate --no-open && tuist build quertty
 ```
 
 Result: **Build Succeeded** (confirmed by automated build step).
+
+---
+
+## Task 3 (Sidebar outline): Projects expand to tab sub-items
+
+### Manual check (PENDING USER VERIFICATION)
+
+Run the app:
+```bash
+open ~/Library/Developer/Xcode/DerivedData/quertty-giuacqmlsqkgkrdadhyyjabydjxb/Build/Products/Debug/quertty.app
+```
+
+1. **Single-tab project is a plain row**: With only one tab open in a project, the sidebar row has no disclosure triangle.
+2. **2+-tab project is expandable**: Press ⌘T to open a second tab. The project row gains a disclosure triangle and the sub-items show the tab titles.
+3. **Active project auto-expands**: The active project is always expanded (when it has 2+ tabs). Switching projects auto-expands the newly active one.
+4. **Clicking a tab child switches to it**: Click a tab sub-item — the pane area and tab bar switch to that tab; the sub-item row is highlighted.
+5. **Clicking a project row switches project**: Clicking the project-level row switches project and keeps its current active tab.
+6. **Pin toggle still works**: Pin icon on project rows still toggles correctly.
+7. **Add Project still works**: "+" / ⌘O opens the directory picker and adds a new project.
+
+**Status: PENDING USER VERIFICATION**
+
+### Build verification (headless)
+
+```bash
+mise exec -- tuist generate --no-open && tuist build quertty
+```
+
+Result: **Build Succeeded** (confirmed by automated build step).

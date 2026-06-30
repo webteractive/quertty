@@ -1,47 +1,93 @@
 import AppKit
 
+// MARK: - SidebarProject
+
+/// Plain data for one project row in the sidebar.
+///
+/// When `tabTitles.count >= 2` the project row is expandable and its children
+/// are the individual tab titles.  A single-tab project is a plain leaf row.
+struct SidebarProject {
+    let name: String
+    let isPinned: Bool
+    let tabTitles: [String]   // .count >= 2 → expandable
+}
+
+// MARK: - Outline item model
+
+/// Identity-stable wrapper used as NSOutlineView item objects.
+///
+/// NSOutlineView requires object identity for items, so we box a simple enum
+/// in a class.  Two `OutlineItem` instances are equal iff they wrap the same
+/// case with the same index values.
+private final class OutlineItem: NSObject {
+    enum Kind: Hashable {
+        case project(Int)
+        case tab(project: Int, tab: Int)
+    }
+    let kind: Kind
+    init(_ kind: Kind) { self.kind = kind }
+
+    override func isEqual(_ object: Any?) -> Bool {
+        guard let other = object as? OutlineItem else { return false }
+        return kind == other.kind
+    }
+    override var hash: Int {
+        var hasher = Hasher()
+        hasher.combine(kind)   // Kind is Hashable; distinguishes project vs tab without collisions
+        return hasher.finalize()
+    }
+}
+
 // MARK: - SidebarView
 
-/// A vertical list of projects with select, add, and pin callbacks.
+/// A two-level sidebar backed by an `NSOutlineView`.
 ///
-/// Owns an `NSTableView` (view-based, single column) inside an `NSScrollView`,
-/// plus an "Add Project" button anchored at the bottom.  The view is dumb —
-/// it takes plain display data in and reports user actions out via closures.
+/// Top level = projects.  A project is expandable (shows tab children) only
+/// when it has 2 or more tabs.  The view is dumb — it takes plain display data
+/// in and reports user actions out via closures.  No QuerttyCore import.
 @MainActor
 final class SidebarView: NSView {
 
     // MARK: - Callbacks
 
-    /// Called with the row index when the user clicks a project row.
-    var onSelect: ((Int) -> Void)?
+    /// Called with the project index when the user clicks a project row.
+    var onSelectProject: ((Int) -> Void)?
+
+    /// Called with (projectIndex, tabIndex) when the user clicks a tab child row.
+    var onSelectTab: ((Int, Int) -> Void)?
 
     /// Called when the user clicks the "+" Add Project button.
     var onAddProject: (() -> Void)?
 
-    /// Called with the row index when the user clicks the pin button on a row.
+    /// Called with the project index when the user clicks the pin button.
     var onTogglePin: ((Int) -> Void)?
 
     // MARK: - Private state
 
-    private var projects: [(name: String, isPinned: Bool)] = []
-    private var selectedIndex: Int = -1
+    private var projects: [SidebarProject] = []
+    private var activeProject: Int = -1
+    private var activeTab: Int = -1
+
+    // Item-object cache — keyed by Kind so we reuse the same object across
+    // reloads (NSOutlineView uses pointer/isEqual identity for expansion state).
+    private var itemCache: [OutlineItem.Kind: OutlineItem] = [:]
 
     // MARK: - Subviews
 
     private let scrollView: NSScrollView
-    private let tableView: NSTableView
+    private let outlineView: NSOutlineView
     private let addButton: NSButton
 
     // MARK: - Init
 
     override init(frame frameRect: NSRect) {
-        tableView = NSTableView()
+        outlineView = NSOutlineView()
         scrollView = NSScrollView()
         addButton = NSButton(title: "+", target: nil, action: nil)
 
         super.init(frame: frameRect)
 
-        setupTableView()
+        setupOutlineView()
         setupAddButton()
         setupLayout()
     }
@@ -51,20 +97,23 @@ final class SidebarView: NSView {
 
     // MARK: - Setup
 
-    private func setupTableView() {
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("ProjectColumn"))
+    private func setupOutlineView() {
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("ItemColumn"))
         column.minWidth = 160
-        tableView.addTableColumn(column)
-        tableView.headerView = nil
-        tableView.rowHeight = 28
-        tableView.selectionHighlightStyle = .regular
-        tableView.allowsEmptySelection = true
-        tableView.allowsMultipleSelection = false
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.translatesAutoresizingMaskIntoConstraints = false
+        outlineView.addTableColumn(column)
+        outlineView.outlineTableColumn = column
+        outlineView.headerView = nil
+        outlineView.rowHeight = 28
+        outlineView.selectionHighlightStyle = .regular
+        outlineView.allowsEmptySelection = true
+        outlineView.allowsMultipleSelection = false
+        outlineView.indentationPerLevel = 16
+        outlineView.indentationMarkerFollowsCell = true
+        outlineView.dataSource = self
+        outlineView.delegate = self
+        outlineView.translatesAutoresizingMaskIntoConstraints = false
 
-        scrollView.documentView = tableView
+        scrollView.documentView = outlineView
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
@@ -99,26 +148,75 @@ final class SidebarView: NSView {
         ])
     }
 
+    // MARK: - Item-object helpers
+
+    private func item(for kind: OutlineItem.Kind) -> OutlineItem {
+        if let existing = itemCache[kind] { return existing }
+        let obj = OutlineItem(kind)
+        itemCache[kind] = obj
+        return obj
+    }
+
+    private func projectItem(at index: Int) -> OutlineItem {
+        item(for: .project(index))
+    }
+
+    private func tabItem(project: Int, tab: Int) -> OutlineItem {
+        item(for: .tab(project: project, tab: tab))
+    }
+
     // MARK: - Update
 
-    /// True while `update()` is programmatically setting the selection, so the
-    /// resulting `tableViewSelectionDidChange` doesn't re-fire `onSelect` and
-    /// loop back through the owner's refresh.
+    /// True while `update()` is programmatically adjusting the outline view, so
+    /// `outlineViewSelectionDidChange` doesn't re-fire callbacks and cause loops.
     private var isUpdating = false
 
-    /// Replaces the displayed project list and highlighted selection.
-    func update(projects: [(name: String, isPinned: Bool)], selectedIndex: Int) {
+    /// Replaces the displayed data, auto-expands the active project, and
+    /// highlights the active project/tab rows.
+    func update(projects: [SidebarProject], activeProject: Int, activeTab: Int) {
         isUpdating = true
         defer { isUpdating = false }
+
         self.projects = projects
-        self.selectedIndex = selectedIndex
-        tableView.reloadData()
-        if projects.indices.contains(selectedIndex) {
-            let indexSet = IndexSet(integer: selectedIndex)
-            tableView.selectRowIndexes(indexSet, byExtendingSelection: false)
-            tableView.scrollRowToVisible(selectedIndex)
+        self.activeProject = activeProject
+        self.activeTab = activeTab
+
+        // Evict stale cache entries whose indices no longer exist.
+        itemCache = itemCache.filter { kind, _ in
+            switch kind {
+            case .project(let p):       return projects.indices.contains(p)
+            case .tab(let p, let t):
+                return projects.indices.contains(p)
+                    && projects[p].tabTitles.indices.contains(t)
+            }
+        }
+
+        outlineView.reloadData()
+
+        // Auto-expand the active project if it is expandable.
+        if projects.indices.contains(activeProject),
+           projects[activeProject].tabTitles.count >= 2 {
+            outlineView.expandItem(projectItem(at: activeProject))
+        }
+
+        // Select the active tab child row (or the project row for single-tab projects).
+        let rowToSelect: Int
+        if projects.indices.contains(activeProject),
+           projects[activeProject].tabTitles.count >= 2 {
+            let tabObj = tabItem(project: activeProject, tab: activeTab)
+            rowToSelect = outlineView.row(forItem: tabObj)
+        } else if projects.indices.contains(activeProject) {
+            let projObj = projectItem(at: activeProject)
+            rowToSelect = outlineView.row(forItem: projObj)
         } else {
-            tableView.deselectAll(nil)
+            rowToSelect = -1
+        }
+
+        if rowToSelect >= 0 {
+            outlineView.selectRowIndexes(IndexSet(integer: rowToSelect), byExtendingSelection: false)
+            outlineView.scrollRowToVisible(rowToSelect)
+        } else {
+            outlineView.deselectAll(nil)
         }
     }
 
@@ -129,50 +227,114 @@ final class SidebarView: NSView {
     }
 
     @objc private func pinButtonClicked(_ sender: NSButton) {
-        let row = sender.tag
-        guard projects.indices.contains(row) else { return }
-        onTogglePin?(row)
+        let projectIndex = sender.tag
+        guard projects.indices.contains(projectIndex) else { return }
+        onTogglePin?(projectIndex)
     }
 }
 
-// MARK: - NSTableViewDataSource
+// MARK: - NSOutlineViewDataSource
 
-extension SidebarView: NSTableViewDataSource {
-    func numberOfRows(in _: NSTableView) -> Int {
-        projects.count
-    }
-}
+extension SidebarView: NSOutlineViewDataSource {
 
-// MARK: - NSTableViewDelegate
-
-extension SidebarView: NSTableViewDelegate {
-
-    func tableView(_ tableView: NSTableView, viewFor _: NSTableColumn?, row: Int) -> NSView? {
-        let identifier = NSUserInterfaceItemIdentifier("ProjectCell")
-        let cellView: ProjectCellView
-        if let recycled = tableView.makeView(withIdentifier: identifier, owner: nil) as? ProjectCellView {
-            cellView = recycled
-        } else {
-            cellView = ProjectCellView()
-            cellView.identifier = identifier
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        if item == nil {
+            // Root level: number of projects.
+            return projects.count
         }
-        let project = projects[row]
-        cellView.configure(name: project.name, isPinned: project.isPinned, row: row, target: self, action: #selector(pinButtonClicked(_:)))
-        return cellView
+        guard let obj = item as? OutlineItem,
+              case .project(let p) = obj.kind,
+              projects.indices.contains(p) else { return 0 }
+        let count = projects[p].tabTitles.count
+        return count >= 2 ? count : 0
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard !isUpdating else { return }  // ignore programmatic selection from update()
-        guard let tv = notification.object as? NSTableView else { return }
-        let row = tv.selectedRow
-        guard row >= 0 else { return }
-        onSelect?(row)
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        if item == nil {
+            return projectItem(at: index)
+        }
+        guard let obj = item as? OutlineItem,
+              case .project(let p) = obj.kind else {
+            return projectItem(at: 0)   // fallback (should never happen)
+        }
+        return tabItem(project: p, tab: index)
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        guard let obj = item as? OutlineItem,
+              case .project(let p) = obj.kind,
+              projects.indices.contains(p) else { return false }
+        return projects[p].tabTitles.count >= 2
+    }
+}
+
+// MARK: - NSOutlineViewDelegate
+
+extension SidebarView: NSOutlineViewDelegate {
+
+    func outlineView(_ outlineView: NSOutlineView,
+                     viewFor tableColumn: NSTableColumn?,
+                     item: Any) -> NSView? {
+        guard let obj = item as? OutlineItem else { return nil }
+
+        switch obj.kind {
+        case .project(let p):
+            guard projects.indices.contains(p) else { return nil }
+            let project = projects[p]
+
+            let identifier = NSUserInterfaceItemIdentifier("ProjectCell")
+            let cellView: ProjectCellView
+            if let recycled = outlineView.makeView(withIdentifier: identifier, owner: nil) as? ProjectCellView {
+                cellView = recycled
+            } else {
+                cellView = ProjectCellView()
+                cellView.identifier = identifier
+            }
+            cellView.configure(
+                name: project.name,
+                isPinned: project.isPinned,
+                projectIndex: p,
+                target: self,
+                action: #selector(pinButtonClicked(_:))
+            )
+            return cellView
+
+        case .tab(let p, let t):
+            guard projects.indices.contains(p),
+                  projects[p].tabTitles.indices.contains(t) else { return nil }
+            let title = projects[p].tabTitles[t]
+
+            let identifier = NSUserInterfaceItemIdentifier("TabCell")
+            let cellView: TabCellView
+            if let recycled = outlineView.makeView(withIdentifier: identifier, owner: nil) as? TabCellView {
+                cellView = recycled
+            } else {
+                cellView = TabCellView()
+                cellView.identifier = identifier
+            }
+            cellView.configure(title: title)
+            return cellView
+        }
+    }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        guard !isUpdating else { return }
+        let row = outlineView.selectedRow
+        guard row >= 0,
+              let obj = outlineView.item(atRow: row) as? OutlineItem else { return }
+
+        switch obj.kind {
+        case .project(let p):
+            onSelectProject?(p)
+        case .tab(let p, let t):
+            onSelectTab?(p, t)
+        }
     }
 }
 
 // MARK: - ProjectCellView
 
-/// A single row cell: project name label on the left, pin toggle button on the right.
+/// A single project row: name label on the left, pin toggle button on the right.
 private final class ProjectCellView: NSTableCellView {
 
     private let nameLabel: NSTextField
@@ -196,7 +358,7 @@ private final class ProjectCellView: NSTableCellView {
         addSubview(pinButton)
 
         NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            nameLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             nameLabel.trailingAnchor.constraint(equalTo: pinButton.leadingAnchor, constant: -4),
 
@@ -210,18 +372,53 @@ private final class ProjectCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError("not supported") }
 
-    func configure(name: String, isPinned: Bool, row: Int, target: AnyObject, action: Selector) {
+    func configure(name: String, isPinned: Bool, projectIndex: Int,
+                   target: AnyObject, action: Selector) {
         nameLabel.stringValue = name
 
         let symbolName = isPinned ? "pin.fill" : "pin"
-        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: isPinned ? "Pinned" : "Pin") {
+        if let image = NSImage(systemSymbolName: symbolName,
+                               accessibilityDescription: isPinned ? "Pinned" : "Pin") {
             pinButton.image = image
         } else {
             pinButton.title = isPinned ? "📌" : "◌"
         }
 
-        pinButton.tag = row
+        pinButton.tag = projectIndex
         pinButton.target = target
         pinButton.action = action
+    }
+}
+
+// MARK: - TabCellView
+
+/// A single tab child row: indented title label only.
+private final class TabCellView: NSTableCellView {
+
+    private let titleLabel: NSTextField
+
+    override init(frame frameRect: NSRect) {
+        titleLabel = NSTextField(labelWithString: "")
+
+        super.init(frame: frameRect)
+
+        titleLabel.font = NSFont.systemFont(ofSize: 12)
+        titleLabel.textColor = .secondaryLabelColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("not supported") }
+
+    func configure(title: String) {
+        titleLabel.stringValue = title
     }
 }
