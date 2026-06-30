@@ -103,3 +103,49 @@ mise exec -- tuist generate && mise exec -- tuist build quertty
 ```
 
 Result: **Build Succeeded** (confirmed by automated build step).
+
+---
+
+## Task 6: Persist & restore layout via WorkspaceStore
+
+### What was implemented
+
+- `Sources/QuerttyCore/Persistence/SessionSnapshot.swift` — pure mapping functions:
+  - `SessionSnapshot.workspace(from:)` — snapshots a `TabList` into a `Workspace` (all tabs under one default Project/Session).
+  - `SessionSnapshot.paneTrees(from:)` — reverses the mapping; returns `[]` on empty/absent workspace so callers fall back gracefully.
+- `Sources/QuerttyCore/Model/TabList.swift` — added `public convenience init?(restoring:activeIndex:)` that builds a `TabList` from saved `PaneTree`s; returns `nil` for an empty array.
+- `Tests/QuerttyCoreTests/SessionSnapshotTests.swift` — 7 Swift Testing tests covering the round-trip (tab count, surface `workingDir`s survive save/load), empty-workspace fallback, and `TabList.init?(restoring:)` edge cases.
+- `App/Sources/App/TerminalViewController.swift` — added `restore(trees:)` (seeds the `tabList` before the view loads) and `currentPaneTrees` (read-only snapshot for the quit path).
+- `App/Sources/App/AppDelegate.swift` — wired lifecycle:
+  - `applicationDidFinishLaunching`: loads `~/Library/Application Support/quertty/workspace.json`, maps to `PaneTree`s, seeds `TerminalViewController`. Falls back silently to a fresh tab on any error.
+  - `applicationWillTerminate`: snapshots `currentPaneTrees` → `Workspace` → saves. Errors swallowed so quit path never crashes.
+
+### Manual check
+
+Open quertty, create a 2-tab arrangement (⌘T) with a vertical split on one tab (⌘D), quit (⌘Q), relaunch.
+
+Expected:
+- The same number of tabs is restored.
+- The split layout on the tab that had a split is restored.
+- Terminals re-spawn at the saved working directories.
+- Scrollback is not restored (no daemon, expected).
+
+**Status: PENDING USER VERIFICATION**
+
+---
+
+### Build verification (headless)
+
+```bash
+mise exec -- tuist generate && mise exec -- tuist build quertty
+```
+
+Result: **Build Succeeded** (confirmed by automated build step).
+
+### Unit tests
+
+```bash
+swift test
+```
+
+Result: **38 tests passed** (all passing, including 7 new SessionSnapshot round-trip tests).

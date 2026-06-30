@@ -1,5 +1,6 @@
 import AppKit
 import GhosttyTerminal
+import QuerttyCore
 
 /// Window that gives the app's main-menu key equivalents (⌘D / ⇧⌘D / ⌘W)
 /// priority over the focused view. The embedded GhosttyTerminal view otherwise
@@ -23,10 +24,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let minimumContentSize = NSSize(width: 480, height: 320)
     private var window: NSWindow?
 
+    /// Weak reference to the terminal view controller for saving on quit.
+    private weak var terminalViewController: TerminalViewController?
+
+    /// The persistent workspace store backed by `~/Library/Application Support/quertty/`.
+    private lazy var workspaceStore: WorkspaceStore = {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        let dir = appSupport.appendingPathComponent("quertty")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return WorkspaceStore(directory: dir)
+    }()
+
     func applicationDidFinishLaunching(_: Notification) {
         // TerminalController internally calls ghostty_init(0, nil) exactly once
         // via its own initializeRuntimeIfNeeded() guard, so we do not call
         // Ghostty.initializeRuntime() here to avoid a double-init.
+
+        let tvc = TerminalViewController()
+        restoreLayout(into: tvc)
+        terminalViewController = tvc
 
         let window = QuerttyWindow(
             contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -39,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.backgroundColor = .windowBackgroundColor
         window.titlebarAppearsTransparent = false
         window.contentMinSize = minimumContentSize
-        window.contentViewController = TerminalViewController()
+        window.contentViewController = tvc
         window.center()
         window.makeKeyAndOrderFront(nil)
         repairRestoredWindowSizeIfNeeded(window)
@@ -47,6 +65,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
 
         buildMenuBar()
+    }
+
+    func applicationWillTerminate(_: Notification) {
+        saveLayout()
+    }
+
+    // MARK: - Persistence helpers
+
+    /// Load the saved workspace and seed the terminal view controller with it.
+    /// On any error (missing file, corrupt JSON) this silently falls back to
+    /// the default fresh-tab layout — the app must never crash on bad data.
+    private func restoreLayout(into tvc: TerminalViewController) {
+        do {
+            let workspace = try workspaceStore.load()
+            let trees = SessionSnapshot.paneTrees(from: workspace)
+            tvc.restore(trees: trees)
+        } catch {
+            // Corrupt or unreadable — start fresh.
+        }
+    }
+
+    /// Snapshot the current layout and write it to disk.
+    /// Errors are swallowed so a full disk or sandbox denial never crashes the quit path.
+    private func saveLayout() {
+        guard let tvc = terminalViewController else { return }
+        let trees = tvc.currentPaneTrees
+        guard !trees.isEmpty else { return }
+        // Build a temporary TabList purely to drive the snapshot mapping.
+        let list = TabList(restoring: trees) ?? TabList()
+        let workspace = SessionSnapshot.workspace(from: list)
+        try? workspaceStore.save(workspace)
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {

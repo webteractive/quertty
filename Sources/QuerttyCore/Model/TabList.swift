@@ -22,6 +22,22 @@ public final class TabList {
         activeIndex = 0
     }
 
+    /// Creates a list restored from saved `PaneTree`s.
+    ///
+    /// Returns `nil` when `trees` is empty so callers can fall back to
+    /// `init()` (a fresh single-pane tab) without special-casing nil.
+    ///
+    /// - Parameters:
+    ///   - trees: Non-empty array of restored `PaneTree`s.
+    ///   - activeIndex: Index of the tab to select initially; clamped to a
+    ///     valid range automatically.
+    public convenience init?(restoring trees: [PaneTree], activeIndex: Int = 0) {
+        guard !trees.isEmpty else { return nil }
+        self.init()
+        self.trees = trees
+        self.activeIndex = min(max(activeIndex, 0), trees.count - 1)
+    }
+
     /// The `PaneTree` for the current tab.
     public var activeTree: PaneTree {
         get { trees[activeIndex] }

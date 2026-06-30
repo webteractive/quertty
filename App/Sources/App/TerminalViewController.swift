@@ -35,7 +35,7 @@ final class TerminalViewController: NSViewController {
     private let registry = SurfaceRegistry()
 
     /// Tab manager.  One `PaneTree` per tab.
-    private let tabList = TabList()
+    private var tabList = TabList()
 
     /// The logical pane tree for the ACTIVE tab.  Mutate this, then call
     /// `rebuildSurfaceNodeView()`.  Declared `internal` so the `PaneActions`
@@ -83,6 +83,23 @@ final class TerminalViewController: NSViewController {
     override func viewWillDisappear() {
         super.viewWillDisappear()
         firstResponderObservation = nil
+    }
+
+    // MARK: - Layout restoration
+
+    /// Replaces the current `TabList` with one built from `trees`.
+    ///
+    /// Called by `AppDelegate` before the view appears so the restored layout
+    /// is rendered on first draw.  When `trees` is empty (corrupt or absent
+    /// workspace) this is a no-op and the view keeps its default fresh tab.
+    func restore(trees: [PaneTree]) {
+        guard let restored = TabList(restoring: trees) else { return }
+        tabList = restored
+    }
+
+    /// A snapshot of the current `TabList` suitable for persistence.
+    var currentPaneTrees: [PaneTree] {
+        tabList.trees
     }
 
     // MARK: - Tab bar setup
