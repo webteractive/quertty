@@ -98,6 +98,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shellMenu = NSMenu(title: "Shell")
         shellMenuItem.submenu = shellMenu
 
+        // "New Tab"  ⌘T
+        let newTab = NSMenuItem(
+            title: "New Tab",
+            action: #selector(TerminalViewController.newTab(_:)),
+            keyEquivalent: "t"
+        )
+        newTab.keyEquivalentModifierMask = [.command]
+        shellMenu.addItem(newTab)
+
+        shellMenu.addItem(.separator())
+
         // "Split Vertically"  ⌘D
         let splitV = NSMenuItem(
             title: "Split Vertically",
@@ -126,6 +137,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         closePane.keyEquivalentModifierMask = [.command]
         shellMenu.addItem(closePane)
+
+        // "Close Tab"  ⇧⌘W
+        let closeTab = NSMenuItem(
+            title: "Close Tab",
+            action: #selector(TerminalViewController.closeTab(_:)),
+            keyEquivalent: "W"
+        )
+        closeTab.keyEquivalentModifierMask = [.command, .shift]
+        shellMenu.addItem(closeTab)
+
+        shellMenu.addItem(.separator())
+
+        // "Select Next Tab"  ⌘}
+        let nextTab = NSMenuItem(
+            title: "Select Next Tab",
+            action: #selector(TerminalViewController.selectNextTab(_:)),
+            keyEquivalent: "}"
+        )
+        nextTab.keyEquivalentModifierMask = [.command]
+        shellMenu.addItem(nextTab)
+
+        // "Select Previous Tab"  ⌘{
+        let prevTab = NSMenuItem(
+            title: "Select Previous Tab",
+            action: #selector(TerminalViewController.selectPreviousTab(_:)),
+            keyEquivalent: "{"
+        )
+        prevTab.keyEquivalentModifierMask = [.command]
+        shellMenu.addItem(prevTab)
 
         NSApp.mainMenu = mainMenu
     }

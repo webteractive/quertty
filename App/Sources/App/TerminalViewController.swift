@@ -4,7 +4,8 @@ import QuerttyGhostty
 
 // MARK: - TerminalViewController
 
-/// Hosts a recursive split-pane terminal layout driven by a `PaneTree`.
+/// Hosts a recursive split-pane terminal layout driven by a `PaneTree`,
+/// with full tab support via `TabList`.
 ///
 /// # Layout model
 /// `paneTree.layout.root` is a `SurfaceNode` tree.  Each time the tree
@@ -12,50 +13,43 @@ import QuerttyGhostty
 /// fresh `SurfaceNodeView`.  Unchanged leaf panes share their persistent
 /// `TerminalView` from `registry`, so splits never kill a sibling session.
 ///
+/// # Tab model
+/// A `TabList` holds one `PaneTree` per tab.  The computed `paneTree`
+/// property forwards to `tabList.activeTree`, so all `PaneActions`
+/// methods operate on the active tab without modification.
+///
+/// # Registry pruning
+/// After each rebuild the registry is pruned to the UNION of surface IDs across
+/// ALL tabs.  Background tabs keep their live PTY sessions; only truly closed
+/// surfaces are torn down.
+///
 /// # Session ownership
 /// The live PTY lives inside `TerminalView` (AppTerminalView) via its
 /// embedded `TerminalSurfaceCoordinator → TerminalSurface`.
-/// `TerminalController` only owns the ghostty app/config lifecycle.
 /// `SurfaceRegistry` retains both; `prune(keeping:)` tears down removed panes.
-///
-/// # Default window
-/// Seeds the tree with a single leaf — one terminal, matching Phase 0 behaviour.
-///
-/// # Debug split
-/// To visually verify two-pane rendering without running the app, set
-/// `debugTwoPane = true` below.  Revert before shipping.
 final class TerminalViewController: NSViewController {
-
-    // MARK: - Debug flag (REVERT before committing)
-    //
-    // Set to `true` temporarily to seed a two-leaf vertical split so the
-    // build proves the split path compiles.  The default (false) gives the
-    // normal single-pane window.
-    private static let debugTwoPane: Bool = false
 
     // MARK: - State
 
-    /// Shared registry — persists terminal views across re-renders.
+    /// Shared registry — persists terminal views across re-renders and tab switches.
     private let registry = SurfaceRegistry()
 
-    /// The logical pane tree.  Mutate this, then call `rebuildSurfaceNodeView()`.
-    /// Declared `internal` so the `PaneActions` extension (same module) can write it.
-    var paneTree: PaneTree = {
-        let surface = Surface(workingDir: NSHomeDirectory())
-        let layout = Layout(root: .leaf(surface))
-        var tree = PaneTree(layout: layout, focusedSurfaceID: surface.id)
+    /// Tab manager.  One `PaneTree` per tab.
+    private let tabList = TabList()
 
-        // DEBUG: temporary two-pane seed — revert to single-leaf before shipping.
-        if TerminalViewController.debugTwoPane {
-            let second = Surface(workingDir: NSHomeDirectory())
-            tree.splitFocused(direction: .vertical, newSurface: second)
-        }
-
-        return tree
-    }()
+    /// The logical pane tree for the ACTIVE tab.  Mutate this, then call
+    /// `rebuildSurfaceNodeView()`.  Declared `internal` so the `PaneActions`
+    /// extension (same module) can write it.
+    var paneTree: PaneTree {
+        get { tabList.activeTree }
+        set { tabList.activeTree = newValue }
+    }
 
     /// The currently installed root content view (a `SurfaceNodeView`).
     private var rootContentView: SurfaceNodeView?
+
+    /// The tab bar strip shown above the pane area.
+    private var tabBarView: TabBarView?
 
     /// KVO token for observing `window.firstResponder`.
     private var firstResponderObservation: NSKeyValueObservation?
@@ -69,6 +63,7 @@ final class TerminalViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        setupTabBar()
         rebuildSurfaceNodeView()
     }
 
@@ -88,6 +83,90 @@ final class TerminalViewController: NSViewController {
     override func viewWillDisappear() {
         super.viewWillDisappear()
         firstResponderObservation = nil
+    }
+
+    // MARK: - Tab bar setup
+
+    private func setupTabBar() {
+        let tabBar = TabBarView()
+        tabBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tabBar)
+
+        tabBar.onSelect = { [weak self] index in
+            self?.selectTab(at: index)
+        }
+        tabBar.onNewTab = { [weak self] in
+            self?.newTab(nil)
+        }
+
+        NSLayoutConstraint.activate([
+            tabBar.topAnchor.constraint(equalTo: view.topAnchor),
+            tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tabBar.heightAnchor.constraint(equalToConstant: 28),
+        ])
+
+        self.tabBarView = tabBar
+        refreshTabBar()
+    }
+
+    /// Syncs the tab bar UI state with `tabList`.
+    private func refreshTabBar() {
+        let titles = tabList.trees.indices.map { tabList.title(at: $0) }
+        tabBarView?.update(titles: titles, selectedIndex: tabList.activeIndex)
+    }
+
+    // MARK: - Tab actions (responder-chain targets)
+
+    /// Open a new tab and focus its single fresh pane.  Key equivalent: ⌘T.
+    @objc func newTab(_ sender: Any?) {
+        tabList.newTab()
+        refreshTabBar()
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// Close the active tab.  No-op if it is the only tab.  Key equivalent: ⇧⌘W.
+    @objc func closeTab(_ sender: Any?) {
+        tabList.closeTab(at: tabList.activeIndex)
+        refreshTabBar()
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// Switch to the next tab, wrapping.  Key equivalent: ⌘}.
+    @objc func selectNextTab(_ sender: Any?) {
+        tabList.selectNext()
+        refreshTabBar()
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// Switch to the previous tab, wrapping.  Key equivalent: ⌘{.
+    @objc func selectPreviousTab(_ sender: Any?) {
+        tabList.selectPrevious()
+        refreshTabBar()
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    // MARK: - Private helper
+
+    private func selectTab(at index: Int) {
+        tabList.select(index: index)
+        refreshTabBar()
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
     }
 
     // MARK: - First-responder observation
@@ -125,8 +204,8 @@ final class TerminalViewController: NSViewController {
     /// Replaces the root content view with a freshly-built `SurfaceNodeView`
     /// derived from `paneTree.layout.root`.
     ///
-    /// After building, prunes the registry to release controllers/views for
-    /// any surfaces that are no longer in the tree.
+    /// After building, prunes the registry to the UNION of surface IDs across
+    /// ALL tabs — background tabs keep their live PTY sessions alive.
     ///
     /// Declared `internal` so the `PaneActions` extension (same module) can call it.
     func rebuildSurfaceNodeView() {
@@ -139,16 +218,26 @@ final class TerminalViewController: NSViewController {
         )
         newRoot.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(newRoot)
+
+        // Pin below the tab bar (28 pt), or to the top if there is no tab bar yet.
+        let topGuide: NSLayoutYAxisAnchor
+        if let tabBar = tabBarView {
+            topGuide = tabBar.bottomAnchor
+        } else {
+            topGuide = view.topAnchor
+        }
+
         NSLayoutConstraint.activate([
-            newRoot.topAnchor.constraint(equalTo: view.topAnchor),
+            newRoot.topAnchor.constraint(equalTo: topGuide),
             newRoot.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             newRoot.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             newRoot.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         rootContentView = newRoot
 
-        let liveIDs = Set(paneTree.layout.surfaces.map(\.id))
-        registry.prune(keeping: liveIDs)
+        // Prune to the union of all tabs' surfaces so background sessions survive.
+        let allIDs = Set(tabList.trees.flatMap { $0.layout.surfaces.map(\.id) })
+        registry.prune(keeping: allIDs)
     }
 
     // MARK: - Helpers
@@ -166,11 +255,7 @@ final class TerminalViewController: NSViewController {
     /// known terminal view.
     ///
     /// Updates `paneTree.focusedSurfaceID` and re-renders so the focus
-    /// highlight moves to the newly focused leaf.  Rebuilding replaces
-    /// `SurfaceNodeView` (cheap — it is a lightweight wrapper; terminal views
-    /// are stable inside the registry), restarts the first-responder observer
-    /// on the same window, and re-issues `makeFirstResponder` — which is a
-    /// no-op when the terminal already has focus.
+    /// highlight moves to the newly focused leaf.
     private func focusChanged(surfaceID: UUID) {
         guard paneTree.focusedSurfaceID != surfaceID else { return }
         paneTree.focus(surfaceID)

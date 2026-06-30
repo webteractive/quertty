@@ -67,3 +67,39 @@ mise exec -- tuist generate && mise exec -- tuist build quertty
 ```
 
 Result: **Build Succeeded** (confirmed by automated build step).
+
+---
+
+## Task 5: Tabs — one PaneTree per tab, tab bar, new/close/switch
+
+### Manual checks
+
+Run the app:
+```bash
+open ~/Library/Developer/Xcode/DerivedData/quertty-giuacqmlsqkgkrdadhyyjabydjxb/Build/Products/Debug/quertty.app
+```
+
+Or open `quertty.xcworkspace` in Xcode and press ⌘R.
+
+1. **Tab bar visible**: The window should show a 28-pt tab bar strip above the pane area, with one segment labelled "Tab 1" and a "+" button to its right.
+2. **New Tab (⌘T)**: Press ⌘T — a second segment "Tab 2" appears; the pane area resets to a fresh single-pane terminal. Pressing ⌘T again gives "Tab 3".
+3. **Split within a tab (⌘D)**: While on Tab 2, press ⌘D to split vertically. Switch to Tab 1 (⌘{) — it should still show its original single pane. Switch back to Tab 2 — the split should still be present.
+4. **Live sessions survive tab switch**: Type text in a pane on Tab 1, switch to Tab 2 and back — the text and shell history on Tab 1 must be intact (background sessions are never pruned).
+5. **Close Tab (⇧⌘W)**: With Tab 2 active and a split inside it, press ⇧⌘W — Tab 2 disappears, remaining tabs reindex, and the pane area shows the next available tab's layout.
+6. **Close Tab no-op on last tab**: With only one tab open, ⇧⌘W must be a no-op (tab stays).
+7. **Select Next Tab (⌘})**: Cycles forward through tabs, wrapping from the last back to Tab 1.
+8. **Select Previous Tab (⌘{)**: Cycles backward through tabs, wrapping from Tab 1 to the last tab.
+9. **Tab bar click**: Click a segment in the tab bar — the pane area should switch to that tab's layout.
+10. **Focus indicator**: Within a tab, the focused pane retains its 2-pt accent border; switching tabs restores the correct focus highlight for that tab.
+
+**Status: PENDING USER VERIFICATION**
+
+---
+
+### Build verification (headless)
+
+```bash
+mise exec -- tuist generate && mise exec -- tuist build quertty
+```
+
+Result: **Build Succeeded** (confirmed by automated build step).
