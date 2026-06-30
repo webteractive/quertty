@@ -1,7 +1,14 @@
-// SurfaceRegistry.swift — Task 2
+// SurfaceRegistry.swift — Task 2 / Task 3
 //
-// Maps each `Surface.id` (UUID) to a persistent `TerminalControlling` instance
-// so that re-renders never recreate a live terminal.
+// Maps each `Surface.id` (UUID) to a persistent pair of (TerminalController,
+// TerminalView) so that re-renders never recreate a live terminal.
+//
+// Session ownership: the PTY session lives inside `TerminalView`
+// (AppTerminalView), specifically in its embedded `TerminalSurfaceCoordinator`
+// which holds the `TerminalSurface` (real libghostty surface + PTY).
+// `TerminalController` only owns the ghostty app/config lifecycle; it does NOT
+// hold the PTY.  Therefore both the view AND the controller must be persisted
+// — the registry stores a `TerminalViewPair` keyed by `Surface.id`.
 //
 // Design note — protocol seam:
 //   `TerminalController` (from GhosttyTerminal) is @MainActor and calls
@@ -16,6 +23,7 @@
 //   @MainActor so that the default factory closure runs on the main actor and
 //   Swift's strict concurrency checks are satisfied.
 
+import AppKit
 import Foundation
 import GhosttyTerminal
 import QuerttyCore
@@ -32,64 +40,114 @@ public protocol TerminalControlling: AnyObject {}
 
 extension TerminalController: TerminalControlling {}
 
+// MARK: - TerminalViewPair
+
+/// A retained pair of controller + view for one logical surface.
+///
+/// The **view** is the persistent unit: it owns the `TerminalSurfaceCoordinator`
+/// which holds the live `TerminalSurface` (PTY).  The controller is stored here
+/// so callers that only need the controller (e.g. tests) can access it without
+/// the view.
+public struct TerminalViewPair {
+    public let controller: any TerminalControlling
+    /// The persistent `NSView` that renders this terminal (AppTerminalView).
+    public let view: NSView
+}
+
 // MARK: - SurfaceRegistry
 
-/// Stores a `TerminalControlling` for every live `Surface`, keyed by
-/// `Surface.id`.  Callers obtain the controller for a surface via
-/// `controller(for:)` — if one already exists it is returned unchanged;
-/// otherwise a new one is created via the factory and stored.
+/// Stores a `TerminalViewPair` for every live `Surface`, keyed by
+/// `Surface.id`.  Callers obtain the view for a surface via
+/// `terminalView(for:)` — if one already exists it is returned unchanged;
+/// otherwise a new one is created via the factories and stored.
 ///
-/// Call `prune(keeping:)` after each layout pass to tear down controllers
-/// whose surfaces have been removed.
+/// The `controller(for:)` method is kept for backward-compatibility with
+/// existing tests and callers that only need the controller.
 ///
-/// `SurfaceRegistry` is `@MainActor` because the default factory creates a
-/// `TerminalController`, which is itself `@MainActor`.
+/// Call `prune(keeping:)` after each layout pass to tear down pairs whose
+/// surfaces have been removed.
+///
+/// `SurfaceRegistry` is `@MainActor` because the default factories create a
+/// `TerminalController` and a `TerminalView`, which are themselves `@MainActor`.
 @MainActor
 public final class SurfaceRegistry {
 
     // MARK: - Storage
 
-    private var controllers: [UUID: any TerminalControlling] = [:]
+    private var pairs: [UUID: TerminalViewPair] = [:]
 
-    // MARK: - Factory
+    // MARK: - Factories
 
     /// Closure used to create a new controller for a surface that has no
     /// entry yet.  Defaults to `TerminalController()` (the real ghostty
     /// implementation).  Override in tests to inject a mock.
     private let controllerFactory: @MainActor (Surface) -> any TerminalControlling
 
+    /// Closure used to create a new `NSView` (AppTerminalView) for a surface.
+    /// Receives the controller so it can be wired up immediately.
+    /// Defaults to creating a properly-configured `TerminalView` with `.exec` backend.
+    private let viewFactory: @MainActor (Surface, any TerminalControlling) -> NSView
+
     // MARK: - Init
 
     public init(
         controllerFactory: @escaping @MainActor (Surface) -> any TerminalControlling = { _ in
             TerminalController()
+        },
+        viewFactory: @escaping @MainActor (Surface, any TerminalControlling) -> NSView = { surface, ctrl in
+            let v = TerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
+            if let tc = ctrl as? TerminalController {
+                v.controller = tc
+            }
+            v.configuration = TerminalSurfaceOptions(backend: .exec)
+            v.translatesAutoresizingMaskIntoConstraints = false
+            return v
         }
     ) {
         self.controllerFactory = controllerFactory
+        self.viewFactory = viewFactory
     }
 
     // MARK: - Public API
 
-    /// Returns the persistent controller for `surface`, creating one if
+    /// Returns the persistent controller for `surface`, creating a pair if
     /// this is the first call for that `surface.id`.
     @discardableResult
     public func controller(for surface: Surface) -> any TerminalControlling {
-        if let existing = controllers[surface.id] {
+        pair(for: surface).controller
+    }
+
+    /// Returns the persistent `NSView` (AppTerminalView) for `surface`,
+    /// creating a pair if this is the first call for that `surface.id`.
+    ///
+    /// The returned view must be embedded directly into the view hierarchy;
+    /// it must not be recreated on subsequent calls — the PTY session lives
+    /// inside it and must be preserved across re-renders.
+    public func terminalView(for surface: Surface) -> NSView {
+        pair(for: surface).view
+    }
+
+    /// Removes every pair whose id is not in `ids`, allowing them to be
+    /// deallocated (which tears down the PTY and ghostty surface).
+    public func prune(keeping ids: Set<UUID>) {
+        pairs = pairs.filter { ids.contains($0.key) }
+    }
+
+    /// The set of surface IDs that currently have a live pair.
+    public var liveIDs: Set<UUID> {
+        Set(pairs.keys)
+    }
+
+    // MARK: - Private
+
+    private func pair(for surface: Surface) -> TerminalViewPair {
+        if let existing = pairs[surface.id] {
             return existing
         }
-        let new = controllerFactory(surface)
-        controllers[surface.id] = new
-        return new
-    }
-
-    /// Removes every controller whose id is not in `ids`, allowing them to
-    /// be deallocated.
-    public func prune(keeping ids: Set<UUID>) {
-        controllers = controllers.filter { ids.contains($0.key) }
-    }
-
-    /// The set of surface IDs that currently have a live controller.
-    public var liveIDs: Set<UUID> {
-        Set(controllers.keys)
+        let ctrl = controllerFactory(surface)
+        let view = viewFactory(surface, ctrl)
+        let pair = TerminalViewPair(controller: ctrl, view: view)
+        pairs[surface.id] = pair
+        return pair
     }
 }

@@ -1,33 +1,61 @@
 import AppKit
 import GhosttyTerminal
+import QuerttyCore
+import QuerttyGhostty
 
 // MARK: - TerminalViewController
 
-/// Phase 0 spike: one full-window libghostty terminal pane.
+/// Hosts a recursive split-pane terminal layout driven by a `PaneTree`.
 ///
-/// Uses the package's high-level `TerminalView` (= `AppTerminalView` on
-/// macOS) with the `.exec` backend, which spawns the user's `$SHELL` in a
-/// real PTY — no ShellCraftKit sandbox shell.
+/// # Layout model
+/// `paneTree.layout.root` is a `SurfaceNode` tree.  Each time the tree
+/// changes, `rebuildSurfaceNodeView()` replaces the root content view with a
+/// fresh `SurfaceNodeView`.  Unchanged leaf panes share their persistent
+/// `TerminalView` from `registry`, so splits never kill a sibling session.
 ///
-/// Lifecycle note: `TerminalController` calls `ghostty_init(0, nil)`
-/// internally via its own `initializeRuntimeIfNeeded()` guard, so
-/// `Ghostty.initializeRuntime()` is intentionally not called here.
+/// # Session ownership
+/// The live PTY lives inside `TerminalView` (AppTerminalView) via its
+/// embedded `TerminalSurfaceCoordinator → TerminalSurface`.
+/// `TerminalController` only owns the ghostty app/config lifecycle.
+/// `SurfaceRegistry` retains both; `prune(keeping:)` tears down removed panes.
+///
+/// # Default window
+/// Seeds the tree with a single leaf — one terminal, matching Phase 0 behaviour.
+///
+/// # Debug split
+/// To visually verify two-pane rendering without running the app, set
+/// `debugTwoPane = true` below.  Revert before shipping.
 final class TerminalViewController: NSViewController {
 
-    // MARK: - Subviews
+    // MARK: - Debug flag (REVERT before committing)
+    //
+    // Set to `true` temporarily to seed a two-leaf vertical split so the
+    // build proves the split path compiles.  The default (false) gives the
+    // normal single-pane window.
+    private static let debugTwoPane: Bool = false
 
-    private lazy var terminalView: TerminalView = {
-        let v = TerminalView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
-        return v
+    // MARK: - State
+
+    /// Shared registry — persists terminal views across re-renders.
+    private let registry = SurfaceRegistry()
+
+    /// The logical pane tree.  Mutate this, then call `rebuildSurfaceNodeView()`.
+    private var paneTree: PaneTree = {
+        let surface = Surface(workingDir: NSHomeDirectory())
+        let layout = Layout(root: .leaf(surface))
+        var tree = PaneTree(layout: layout, focusedSurfaceID: surface.id)
+
+        // DEBUG: temporary two-pane seed — revert to single-leaf before shipping.
+        if TerminalViewController.debugTwoPane {
+            let second = Surface(workingDir: NSHomeDirectory())
+            tree.splitFocused(direction: .vertical, newSurface: second)
+        }
+
+        return tree
     }()
 
-    // MARK: - Terminal objects
-
-    /// Shared controller — manages the ghostty app lifecycle, config, and
-    /// surface creation. Calling `TerminalController()` triggers
-    /// `initializeRuntimeIfNeeded()` which calls `ghostty_init` exactly once
-    /// across the process.
-    private lazy var controller: TerminalController = TerminalController()
+    /// The currently installed root content view (a `SurfaceNodeView`).
+    private var rootContentView: SurfaceNodeView?
 
     // MARK: - View lifecycle
 
@@ -38,57 +66,53 @@ final class TerminalViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        setupTerminalView()
+        rebuildSurfaceNodeView()
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        // Hand keyboard focus to the terminal once the window is on screen.
-        view.window?.makeFirstResponder(terminalView)
+        // Give focus to whichever terminal the PaneTree considers focused.
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        terminalView.fitToSize()
+        // SurfaceNodeView / TerminalView handle their own layout via
+        // Auto Layout + AppTerminalView.setFrameSize.
     }
 
-    // MARK: - Setup
+    // MARK: - Tree rendering
 
-    private func setupTerminalView() {
-        terminalView.delegate = self
-        terminalView.setAccessibilityElement(true)
-        terminalView.setAccessibilityIdentifier("quertty.terminal.surface")
-        terminalView.setAccessibilityLabel("Terminal Surface")
+    /// Replaces the root content view with a freshly-built `SurfaceNodeView`
+    /// derived from `paneTree.layout.root`.
+    ///
+    /// After building, prunes the registry to release controllers/views for
+    /// any surfaces that are no longer in the tree.
+    private func rebuildSurfaceNodeView() {
+        rootContentView?.removeFromSuperview()
 
-        // .exec backend: libghostty spawns $SHELL in a real PTY (not sandboxed).
-        terminalView.configuration = TerminalSurfaceOptions(backend: .exec)
-        terminalView.controller = controller
-        terminalView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(terminalView)
-
+        let newRoot = SurfaceNodeView(node: paneTree.layout.root, registry: registry)
+        newRoot.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(newRoot)
         NSLayoutConstraint.activate([
-            terminalView.topAnchor.constraint(equalTo: view.topAnchor),
-            terminalView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            terminalView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            terminalView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            newRoot.topAnchor.constraint(equalTo: view.topAnchor),
+            newRoot.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            newRoot.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            newRoot.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-    }
-}
+        rootContentView = newRoot
 
-// MARK: - TerminalSurfaceViewDelegate
-
-extension TerminalViewController:
-    TerminalSurfaceTitleDelegate,
-    TerminalSurfaceResizeDelegate,
-    TerminalSurfaceCloseDelegate
-{
-    func terminalDidChangeTitle(_ title: String) {
-        view.window?.title = title.isEmpty ? "quertty" : title
+        let liveIDs = Set(paneTree.layout.surfaces.map(\.id))
+        registry.prune(keeping: liveIDs)
     }
 
-    func terminalDidResize(columns _: Int, rows _: Int) {}
+    // MARK: - Helpers
 
-    func terminalDidClose(processAlive _: Bool) {
-        view.window?.close()
+    /// Returns the `NSView` for the currently focused surface, if any.
+    private func focusedTerminalView() -> NSView? {
+        guard let surface = paneTree.focusedSurface else { return nil }
+        return registry.terminalView(for: surface)
     }
 }
