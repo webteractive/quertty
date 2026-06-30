@@ -52,6 +52,8 @@ let project = Project(
             sources: ["App/Sources/QuerttyGhostty/**"],
             dependencies: [
                 .package(product: "GhosttyKit"),
+                .package(product: "GhosttyTerminal"),
+                .package(product: "QuerttyCore"),
                 .sdk(name: "Carbon", type: .framework),
                 .sdk(name: "CoreVideo", type: .framework),
                 .sdk(name: "IOSurface", type: .framework),
