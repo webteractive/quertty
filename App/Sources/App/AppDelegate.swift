@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         repairRestoredWindowSizeIfNeeded(window)
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
+
+        buildMenuBar()
     }
 
     func applicationSupportsSecureRestorableState(_: NSApplication) -> Bool {
@@ -52,5 +54,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.setContentSize(defaultContentSize)
             window.center()
         }
+    }
+
+    // MARK: - Menu bar
+
+    /// Builds the full menu bar programmatically.
+    ///
+    /// We bootstrap without a storyboard (see `main.swift`) so AppKit never
+    /// loads a `Main.storyboard`; without an explicit menu, the app has no
+    /// Quit item or standard shortcuts.  This method creates the minimal set of
+    /// menus quertty needs.
+    private func buildMenuBar() {
+        let mainMenu = NSMenu()
+
+        // ── App menu ──────────────────────────────────────────────────────────
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenuItem.submenu = appMenu
+        appMenu.addItem(
+            NSMenuItem(
+                title: "Quit quertty",
+                action: #selector(NSApplication.terminate(_:)),
+                keyEquivalent: "q"
+            )
+        )
+
+        // ── Shell menu ────────────────────────────────────────────────────────
+        let shellMenuItem = NSMenuItem()
+        mainMenu.addItem(shellMenuItem)
+        let shellMenu = NSMenu(title: "Shell")
+        shellMenuItem.submenu = shellMenu
+
+        // "Split Vertically"  ⌘D
+        let splitV = NSMenuItem(
+            title: "Split Vertically",
+            action: #selector(TerminalViewController.splitVertical(_:)),
+            keyEquivalent: "d"
+        )
+        splitV.keyEquivalentModifierMask = [.command]
+        shellMenu.addItem(splitV)
+
+        // "Split Horizontally"  ⇧⌘D
+        let splitH = NSMenuItem(
+            title: "Split Horizontally",
+            action: #selector(TerminalViewController.splitHorizontal(_:)),
+            keyEquivalent: "D"
+        )
+        splitH.keyEquivalentModifierMask = [.command, .shift]
+        shellMenu.addItem(splitH)
+
+        shellMenu.addItem(.separator())
+
+        // "Close Pane"  ⌘W
+        let closePane = NSMenuItem(
+            title: "Close Pane",
+            action: #selector(TerminalViewController.closePane(_:)),
+            keyEquivalent: "w"
+        )
+        closePane.keyEquivalentModifierMask = [.command]
+        shellMenu.addItem(closePane)
+
+        NSApp.mainMenu = mainMenu
     }
 }

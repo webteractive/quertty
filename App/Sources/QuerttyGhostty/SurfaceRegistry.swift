@@ -145,6 +145,23 @@ public final class SurfaceRegistry {
         Set(pairs.keys)
     }
 
+    /// Walks `view`'s superview chain and returns the surface UUID whose
+    /// persistent terminal view is `view` or an ancestor of `view`.
+    ///
+    /// Used by `TerminalViewController` to map a first-responder change back to
+    /// a `Surface.id` without relying on `AppTerminalView.onFocusChange` (which
+    /// is `internal` to the GhosttyTerminal module).
+    public func surfaceID(containing view: NSView) -> UUID? {
+        var current: NSView? = view
+        while let v = current {
+            if let id = pairs.first(where: { $0.value.view === v })?.key {
+                return id
+            }
+            current = v.superview
+        }
+        return nil
+    }
+
     // MARK: - Private
 
     private func pair(for surface: Surface) -> TerminalViewPair {

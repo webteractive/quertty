@@ -39,7 +39,8 @@ final class TerminalViewController: NSViewController {
     private let registry = SurfaceRegistry()
 
     /// The logical pane tree.  Mutate this, then call `rebuildSurfaceNodeView()`.
-    private var paneTree: PaneTree = {
+    /// Declared `internal` so the `PaneActions` extension (same module) can write it.
+    var paneTree: PaneTree = {
         let surface = Surface(workingDir: NSHomeDirectory())
         let layout = Layout(root: .leaf(surface))
         var tree = PaneTree(layout: layout, focusedSurfaceID: surface.id)
@@ -55,6 +56,9 @@ final class TerminalViewController: NSViewController {
 
     /// The currently installed root content view (a `SurfaceNodeView`).
     private var rootContentView: SurfaceNodeView?
+
+    /// KVO token for observing `window.firstResponder`.
+    private var firstResponderObservation: NSKeyValueObservation?
 
     // MARK: - View lifecycle
 
@@ -74,6 +78,46 @@ final class TerminalViewController: NSViewController {
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
         }
+        // Observe first-responder changes on the window to track which pane the
+        // user clicks into.  `AppTerminalView.onFocusChange` is `internal` to
+        // GhosttyTerminal, so KVO on `NSWindow.firstResponder` is the only
+        // cross-module way to detect the transition.
+        startObservingFirstResponder()
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        firstResponderObservation = nil
+    }
+
+    // MARK: - First-responder observation
+
+    /// Starts (or restarts) KVO on `window.firstResponder`.
+    ///
+    /// When the first responder changes we walk its superview chain looking for
+    /// a terminal view we recognise from the registry.  Finding one means the
+    /// user clicked into that pane, so we update `paneTree.focusedSurfaceID`
+    /// and redraw the focus highlights.
+    private func startObservingFirstResponder() {
+        guard let window = view.window else { return }
+        firstResponderObservation = window.observe(
+            \.firstResponder,
+            options: [.new]
+        ) { [weak self] _, _ in
+            // observe is called on whatever thread AppKit uses; bounce to main.
+            DispatchQueue.main.async {
+                self?.handleFirstResponderChange()
+            }
+        }
+    }
+
+    private func handleFirstResponderChange() {
+        guard let responder = view.window?.firstResponder as? NSView else { return }
+        // Walk the superview chain of the new first responder to find which
+        // registry view it belongs to (the terminal view itself, or a child of it).
+        if let surfaceID = registry.surfaceID(containing: responder) {
+            focusChanged(surfaceID: surfaceID)
+        }
     }
 
     // MARK: - Tree rendering
@@ -83,10 +127,16 @@ final class TerminalViewController: NSViewController {
     ///
     /// After building, prunes the registry to release controllers/views for
     /// any surfaces that are no longer in the tree.
-    private func rebuildSurfaceNodeView() {
+    ///
+    /// Declared `internal` so the `PaneActions` extension (same module) can call it.
+    func rebuildSurfaceNodeView() {
         rootContentView?.removeFromSuperview()
 
-        let newRoot = SurfaceNodeView(node: paneTree.layout.root, registry: registry)
+        let newRoot = SurfaceNodeView(
+            node: paneTree.layout.root,
+            registry: registry,
+            focusedSurfaceID: paneTree.focusedSurfaceID
+        )
         newRoot.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(newRoot)
         NSLayoutConstraint.activate([
@@ -104,8 +154,28 @@ final class TerminalViewController: NSViewController {
     // MARK: - Helpers
 
     /// Returns the `NSView` for the currently focused surface, if any.
-    private func focusedTerminalView() -> NSView? {
+    /// Declared `internal` so the `PaneActions` extension (same module) can call it.
+    func focusedTerminalView() -> NSView? {
         guard let surface = paneTree.focusedSurface else { return nil }
         return registry.terminalView(for: surface)
+    }
+
+    // MARK: - Focus tracking
+
+    /// Called whenever the KVO observer detects a first-responder change to a
+    /// known terminal view.
+    ///
+    /// Updates `paneTree.focusedSurfaceID` and re-renders so the focus
+    /// highlight moves to the newly focused leaf.  Rebuilding replaces
+    /// `SurfaceNodeView` (cheap — it is a lightweight wrapper; terminal views
+    /// are stable inside the registry), restarts the first-responder observer
+    /// on the same window, and re-issues `makeFirstResponder` — which is a
+    /// no-op when the terminal already has focus.
+    private func focusChanged(surfaceID: UUID) {
+        guard paneTree.focusedSurfaceID != surfaceID else { return }
+        paneTree.focus(surfaceID)
+        rebuildSurfaceNodeView()
+        // Re-attach the KVO observer after rebuilding (the window is the same).
+        startObservingFirstResponder()
     }
 }
