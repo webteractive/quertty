@@ -62,6 +62,9 @@ final class TerminalViewController: NSViewController {
     /// The bottom status strip (cwd · scheme · shell · libghostty version).
     private var statusBarView: StatusBarView?
 
+    /// The command palette overlay, when open.
+    private var commandPaletteView: CommandPaletteView?
+
     /// The pinned libghostty-spm version (no runtime version API is exposed).
     /// Keep in sync with `Project.swift`'s package requirement.
     private static let libghosttyVersion = "1.2.7"
@@ -358,6 +361,62 @@ final class TerminalViewController: NSViewController {
         if path == home { return "~" }
         if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
         return path
+    }
+
+    // MARK: - Command palette
+
+    /// Opens the ⌘K command palette, or closes it if already open.
+    @objc func toggleCommandPalette(_ sender: Any?) {
+        if commandPaletteView != nil {
+            dismissCommandPalette()
+        } else {
+            presentCommandPalette()
+        }
+    }
+
+    private func presentCommandPalette() {
+        guard commandPaletteView == nil else { return }
+        let palette = CommandPaletteView(
+            commands: buildCommands(),
+            onClose: { [weak self] in self?.dismissCommandPalette() }
+        )
+        view.addSubview(palette)
+        NSLayoutConstraint.activate([
+            palette.topAnchor.constraint(equalTo: view.topAnchor),
+            palette.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            palette.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            palette.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        commandPaletteView = palette
+    }
+
+    private func dismissCommandPalette() {
+        commandPaletteView?.removeFromSuperview()
+        commandPaletteView = nil
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// The palette's command set, mapped to the controller's existing actions.
+    private func buildCommands() -> [PaletteCommand] {
+        [
+            PaletteCommand(glyph: "+", label: "New Tab", kbd: "⌘T") { [weak self] in self?.newTab(nil) },
+            PaletteCommand(glyph: "▮", label: "Split Pane Right", kbd: "⌘D") { [weak self] in self?.splitVertical(nil) },
+            PaletteCommand(glyph: "▬", label: "Split Pane Down", kbd: "⇧⌘D") { [weak self] in self?.splitHorizontal(nil) },
+            PaletteCommand(glyph: "×", label: "Close Pane", kbd: "⌘W") { [weak self] in self?.closePane(nil) },
+            PaletteCommand(glyph: "⊗", label: "Close Tab", kbd: "⇧⌘W") { [weak self] in self?.closeTab(nil) },
+            PaletteCommand(glyph: "→", label: "Next Tab", kbd: "⌘}") { [weak self] in self?.selectNextTab(nil) },
+            PaletteCommand(glyph: "←", label: "Previous Tab", kbd: "⌘{") { [weak self] in self?.selectPreviousTab(nil) },
+            PaletteCommand(glyph: "★", label: "Pin / Unpin Current Project", kbd: "") { [weak self] in self?.togglePinActiveProject() },
+            PaletteCommand(glyph: "＋", label: "Add Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
+        ]
+    }
+
+    private func togglePinActiveProject() {
+        workspace.togglePin(at: workspace.activeIndex)
+        refreshSidebar()
+        onWorkspaceDidChange?()
     }
 
     /// Syncs the tab bar UI state with the active project's TabList.

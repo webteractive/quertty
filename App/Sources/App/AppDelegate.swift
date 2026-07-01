@@ -303,6 +303,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         prevTab.keyEquivalentModifierMask = [.command]
         shellMenu.addItem(prevTab)
 
+        // ── View menu ─────────────────────────────────────────────────────────
+        let viewMenuItem = NSMenuItem()
+        mainMenu.addItem(viewMenuItem)
+        let viewMenu = NSMenu(title: "View")
+        viewMenuItem.submenu = viewMenu
+
+        // "Command Palette…"  ⌘K
+        let palette = NSMenuItem(
+            title: "Command Palette\u{2026}",
+            action: #selector(TerminalViewController.toggleCommandPalette(_:)),
+            keyEquivalent: "k"
+        )
+        palette.keyEquivalentModifierMask = [.command]
+        viewMenu.addItem(palette)
+
         // ── Project menu ──────────────────────────────────────────────────────
         let projectMenuItem = NSMenuItem()
         mainMenu.addItem(projectMenuItem)
@@ -322,7 +337,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // than relying on the responder chain. Responder-chain routing only reaches
         // the TVC when a terminal pane holds first responder, so ⌘W/⇧⌘W etc. would
         // silently no-op whenever focus wasn't on a pane. An explicit target always fires.
-        for item in shellMenu.items + projectMenu.items where item.action != nil {
+        for item in shellMenu.items + projectMenu.items + viewMenu.items where item.action != nil {
             item.target = terminalViewController
         }
 
