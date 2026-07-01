@@ -290,3 +290,36 @@ mise exec -- tuist generate --no-open && tuist build quertty
 ```
 
 Result: **Build Succeeded** (confirmed by automated build step).
+
+---
+
+## Task 8: Custom tab bar with per-tab × close button
+
+### What was implemented
+
+- `App/Sources/App/TabBarView.swift` — **full rewrite**: replaced `NSSegmentedControl` with a horizontal `NSStackView` of `TabItemView` instances. Each `TabItemView` shows a truncating title label and a × close button (uses `NSImage(systemSymbolName: "xmark")` on macOS 11+, falls back to the "×" string). `mouseDown` on the tab body fires `onSelect(index)`; double-click fires `onDoubleClick(index)` which triggers the inline rename overlay (same `RenameTextField` mechanism as before). The × `NSButton` fires `onCloseTab(index)`. Added `var onCloseTab: ((Int) -> Void)?` callback. `update(titles:selectedIndex:)` rebuilds the stack and highlights the selected tab via `selectedControlColor` background.
+- `App/Sources/App/TerminalViewController.swift` — wired `tabBar.onCloseTab` → `closeTab(atIndex:)` in `setupTabBar()`. Added `func closeTab(atIndex:)` helper that calls `tabList.closeTab(at:)` then refreshes the tab bar, sidebar, and pane tree. The existing `@objc func closeTab(_ sender: Any?)` (⇧⌘W) is unchanged.
+
+### Manual check (PENDING USER)
+
+Run the app:
+```bash
+open ~/Library/Developer/Xcode/DerivedData/quertty-giuacqmlsqkgkrdadhyyjabydjxb/Build/Products/Debug/quertty.app
+```
+
+1. **Tabs show a × close button**: Each tab item in the bar should display a small × button on its right side — always visible, not hover-only.
+2. **× closes that specific tab**: Clicking the × on any tab (not just the active one) closes that tab. If it is the only tab, × is a no-op.
+3. **Single-click selects**: Clicking the body (label area) of a tab selects it and switches the pane area to that tab's layout.
+4. **Double-click renames**: Double-clicking a tab body shows the inline rename text field, pre-filled with the current manual title (or empty to accept auto name). Enter commits; Escape cancels.
+5. **+ adds a tab**: Clicking "+" to the right of the tabs creates a new tab.
+6. **Selected tab is highlighted visually**: The active tab has a distinct `selectedControlColor`-based background; inactive tabs are transparent.
+
+**Status: PENDING USER VERIFICATION**
+
+### Build verification (headless)
+
+```bash
+mise exec -- tuist generate --no-open && tuist build quertty
+```
+
+Result: **Build Succeeded** (confirmed by automated build step).

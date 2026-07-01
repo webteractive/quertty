@@ -2,26 +2,26 @@ import AppKit
 
 // MARK: - TabBarView
 
-/// A horizontal strip of clickable segment buttons representing the open tabs.
+/// A horizontal strip of clickable tab items representing the open tabs.
 ///
-/// Uses `NSSegmentedControl` in `.selectOne` mode so exactly one tab is always
-/// selected.  Changes are reported back to the owner via the `onSelect` closure.
-/// The tab *model* lives in `QuerttyCore.TabList`; this view only renders it.
+/// Each tab item shows a title label and a × close button.  Changes are reported
+/// back to the owner via the `onSelect`, `onCloseTab`, `onNewTab`, and
+/// `onRenameTab` closures.  The tab *model* lives in `QuerttyCore.TabList`;
+/// this view only renders it.
 ///
-/// Double-clicking the selected segment shows a temporary `NSTextField` overlay
-/// so the user can rename the tab inline.  Committing (Enter / blur) fires
+/// Double-clicking a tab shows a temporary `NSTextField` overlay so the user
+/// can rename the tab inline.  Committing (Enter / blur) fires
 /// `onRenameTab(index, newName)`.  Escaping cancels without a callback.
 @MainActor
 final class TabBarView: NSView {
 
-    // MARK: - Subviews
-
-    private let segmented: NSSegmentedControl
-
     // MARK: - Callbacks
 
-    /// Called with the tab index whenever the user clicks a segment.
+    /// Called with the tab index whenever the user clicks a tab body.
     var onSelect: ((Int) -> Void)?
+
+    /// Called when the user wants to close a tab (× button).
+    var onCloseTab: ((Int) -> Void)?
 
     /// Called when the user wants to add a new tab (+ button).
     var onNewTab: (() -> Void)?
@@ -35,48 +35,56 @@ final class TabBarView: NSView {
     /// rendered auto label (which would otherwise freeze the auto name on commit).
     var currentManualTitle: ((Int) -> String?)?
 
+    // MARK: - Private subviews
+
+    private let stackView: NSStackView
+    private let addButton: NSButton
+
     // MARK: - Inline-edit state
 
-    /// The transient field shown while the user is renaming a segment.
+    /// The transient field shown while the user is renaming a tab.
     private var editingField: RenameTextField?
 
-    /// Index of the segment currently being edited (–1 when none).
+    /// Index of the tab currently being edited (–1 when none).
     private var editingIndex: Int = -1
+
+    // MARK: - Tab item tracking
+
+    private var tabItems: [TabItemView] = []
 
     // MARK: - Init
 
     override init(frame frameRect: NSRect) {
-        segmented = NSSegmentedControl()
-        segmented.segmentStyle = .texturedSquare
-        segmented.trackingMode = .selectOne
-        segmented.translatesAutoresizingMaskIntoConstraints = false
+        stackView = NSStackView()
+        stackView.orientation = .horizontal
+        stackView.spacing = 0
+        stackView.distribution = .fillEqually
+        stackView.alignment = .centerY
+        stackView.translatesAutoresizingMaskIntoConstraints = false
 
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-
-        // "+" new-tab button
-        let addButton = NSButton(title: "+", target: nil, action: nil)
+        addButton = NSButton(title: "+", target: nil, action: nil)
         addButton.bezelStyle = .inline
         addButton.isBordered = false
         addButton.font = NSFont.systemFont(ofSize: 14, weight: .regular)
-        addButton.target = self
-        addButton.action = #selector(addButtonClicked(_:))
         addButton.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(segmented)
+        super.init(frame: frameRect)
+
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+
+        addButton.target = self
+        addButton.action = #selector(addButtonClicked(_:))
+
+        addSubview(stackView)
         addSubview(addButton)
 
-        segmented.target = self
-        segmented.action = #selector(segmentChanged(_:))
-
         NSLayoutConstraint.activate([
-            segmented.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
-            segmented.centerYAnchor.constraint(equalTo: centerYAnchor),
-            segmented.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 2),
-            segmented.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -2),
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            stackView.topAnchor.constraint(equalTo: topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            addButton.leadingAnchor.constraint(equalTo: segmented.trailingAnchor, constant: 6),
+            addButton.leadingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: 4),
             addButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             addButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
         ])
@@ -87,105 +95,57 @@ final class TabBarView: NSView {
 
     // MARK: - Update
 
-    /// Rebuilds segments from `titles` and marks `selectedIndex` as selected.
+    /// Rebuilds tab items from `titles` and marks `selectedIndex` as selected.
     func update(titles: [String], selectedIndex: Int) {
-        // Dismiss any active edit field — the model changed underneath it.
         cancelRename()
-        segmented.segmentCount = titles.count
-        for (i, title) in titles.enumerated() {
-            segmented.setLabel(title, forSegment: i)
-            segmented.setWidth(0, forSegment: i)  // auto-width
+
+        // Remove old items.
+        for item in tabItems {
+            stackView.removeArrangedSubview(item)
+            item.removeFromSuperview()
         }
-        if titles.indices.contains(selectedIndex) {
-            segmented.selectedSegment = selectedIndex
+        tabItems.removeAll()
+
+        // Build new items.
+        for (index, title) in titles.enumerated() {
+            let item = TabItemView(title: title, index: index, isSelected: index == selectedIndex)
+            item.onSelect = { [weak self] idx in
+                self?.onSelect?(idx)
+            }
+            item.onClose = { [weak self] idx in
+                self?.onCloseTab?(idx)
+            }
+            item.onDoubleClick = { [weak self] idx in
+                self?.beginRename(at: idx)
+            }
+            stackView.addArrangedSubview(item)
+            tabItems.append(item)
         }
     }
 
     // MARK: - Actions
 
-    @objc private func segmentChanged(_ sender: NSSegmentedControl) {
-        let idx = sender.selectedSegment
-        guard idx >= 0 else { return }
-        onSelect?(idx)
-    }
-
     @objc private func addButtonClicked(_: Any?) {
         onNewTab?()
-    }
-
-    // MARK: - Double-click detection
-
-    override func mouseDown(with event: NSEvent) {
-        // Only intercept double-clicks on the segmented control; pass everything
-        // else through so single-click selection continues to work normally.
-        guard event.clickCount == 2 else {
-            super.mouseDown(with: event)
-            return
-        }
-
-        let locationInSegmented = segmented.convert(event.locationInWindow, from: nil)
-        guard segmented.bounds.contains(locationInSegmented) else {
-            super.mouseDown(with: event)
-            return
-        }
-
-        let tappedSegment = segment(at: locationInSegmented)
-        guard tappedSegment >= 0 else {
-            super.mouseDown(with: event)
-            return
-        }
-
-        beginRename(at: tappedSegment)
-    }
-
-    /// Returns the segment index whose visual frame contains `point` (in the
-    /// segmented control's own coordinate space), or –1 if none.
-    private func segment(at point: CGPoint) -> Int {
-        let count = segmented.segmentCount
-        guard count > 0 else { return -1 }
-
-        // NSSegmentedControl lays segments out left-to-right.  We compute each
-        // segment's cumulative x-offset by summing the widths reported by the
-        // control.  `width(forSegment:)` returns the _actual_ rendered width
-        // (even when 0 was passed to setWidth, AppKit fills in the auto width).
-        var x: CGFloat = 0
-        for i in 0 ..< count {
-            let w = segmented.width(forSegment: i)
-            if point.x >= x && point.x < x + w {
-                return i
-            }
-            x += w
-        }
-        return -1
     }
 
     // MARK: - Inline rename
 
     private func beginRename(at index: Int) {
-        // Cancel any existing edit first.
         cancelRename()
 
-        let segFrame = segmented.frame
-        let count = segmented.segmentCount
-        guard count > 0, index < count else { return }
+        guard tabItems.indices.contains(index) else { return }
+        let item = tabItems[index]
 
-        // Compute the segment's frame within the segmented control.
-        var x: CGFloat = 0
-        for i in 0 ..< index {
-            x += segmented.width(forSegment: i)
-        }
-        let w = segmented.width(forSegment: index)
-        let segmentRect = CGRect(x: segFrame.minX + x,
-                                 y: segFrame.minY,
-                                 width: w,
-                                 height: segFrame.height)
+        // Convert the item's label frame to self's coordinate space.
+        let labelFrameInItem = item.labelFrame
+        let labelFrameInSelf = convert(labelFrameInItem, from: item)
 
-        // Inset slightly so the field sits neatly inside the segment.
-        let fieldRect = segmentRect.insetBy(dx: 4, dy: 2)
+        let fieldRect = labelFrameInSelf.insetBy(dx: 4, dy: 2)
 
         let field = RenameTextField(frame: fieldRect)
         field.stringValue = currentManualTitle?(index) ?? ""
-        field.font = segmented.font ?? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        field.font = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
         field.alignment = .center
         field.isBezeled = true
         field.bezelStyle = .roundedBezel
@@ -196,7 +156,7 @@ final class TabBarView: NSView {
 
         addSubview(field)
         NSLayoutConstraint.activate([
-            field.centerXAnchor.constraint(equalTo: leadingAnchor, constant: segmentRect.midX),
+            field.centerXAnchor.constraint(equalTo: leadingAnchor, constant: labelFrameInSelf.midX),
             field.centerYAnchor.constraint(equalTo: centerYAnchor),
             field.widthAnchor.constraint(equalToConstant: fieldRect.width),
             field.heightAnchor.constraint(equalToConstant: fieldRect.height),
@@ -226,7 +186,6 @@ final class TabBarView: NSView {
         // `controlTextDidEndEditing` does not fire `onCommit` during teardown.
         editingField?.onCommit = nil
         editingField?.onCancel = nil
-        // Resign first responder (synchronous) so the field loses focus, then remove it.
         if editingField != nil {
             window?.makeFirstResponder(nil)
         }
@@ -237,6 +196,129 @@ final class TabBarView: NSView {
         editingField?.removeFromSuperview()
         editingField = nil
         editingIndex = -1
+    }
+}
+
+// MARK: - TabItemView
+
+/// A single tab pill showing a title and a × close button.
+@MainActor
+private final class TabItemView: NSView {
+
+    // MARK: Constants
+
+    private static let minWidth: CGFloat = 80
+    private static let maxWidth: CGFloat = 200
+    private static let closeButtonSize: CGFloat = 16
+
+    // MARK: Callbacks
+
+    var onSelect: ((Int) -> Void)?
+    var onClose: ((Int) -> Void)?
+    var onDoubleClick: ((Int) -> Void)?
+
+    // MARK: Subviews
+
+    private let titleLabel: NSTextField
+    private let closeButton: NSButton
+
+    // MARK: State
+
+    let index: Int
+    private var isSelected: Bool {
+        didSet { updateAppearance() }
+    }
+
+    /// The frame of the title label in this view's coordinate space (used by
+    /// TabBarView to position the rename overlay accurately).
+    var labelFrame: CGRect {
+        titleLabel.frame
+    }
+
+    // MARK: Init
+
+    init(title: String, index: Int, isSelected: Bool) {
+        self.index = index
+        self.isSelected = isSelected
+
+        titleLabel = NSTextField(labelWithString: title)
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        // × close button — use the system xmark symbol when available.
+        if #available(macOS 11.0, *),
+           let xmark = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close tab") {
+            closeButton = NSButton(image: xmark, target: nil, action: nil)
+            closeButton.imageScaling = .scaleProportionallyDown
+        } else {
+            closeButton = NSButton(title: "×", target: nil, action: nil)
+        }
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .inline
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        super.init(frame: .zero)
+
+        wantsLayer = true
+
+        addSubview(titleLabel)
+        addSubview(closeButton)
+
+        closeButton.target = self
+        closeButton.action = #selector(closeClicked(_:))
+
+        NSLayoutConstraint.activate([
+            // Label fills left side, with padding.
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -2),
+
+            // Close button is fixed size, right-aligned.
+            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+            closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
+            closeButton.widthAnchor.constraint(equalToConstant: Self.closeButtonSize),
+            closeButton.heightAnchor.constraint(equalToConstant: Self.closeButtonSize),
+
+            // Height = 28pt (the tab bar height).
+            heightAnchor.constraint(equalToConstant: 28),
+
+            // Width constraints.
+            widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minWidth),
+            widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth),
+        ])
+
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("not supported") }
+
+    // MARK: Appearance
+
+    private func updateAppearance() {
+        if isSelected {
+            layer?.backgroundColor = NSColor.selectedControlColor.withAlphaComponent(0.35).cgColor
+        } else {
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
+        // Subtle right-edge separator between tabs.
+        layer?.borderColor = NSColor.separatorColor.cgColor
+        layer?.borderWidth = 0
+    }
+
+    // MARK: Mouse interaction
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onDoubleClick?(index)
+        } else {
+            onSelect?(index)
+        }
+    }
+
+    @objc private func closeClicked(_: Any?) {
+        onClose?(index)
     }
 }
 

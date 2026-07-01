@@ -225,6 +225,9 @@ final class TerminalViewController: NSViewController {
             let trees = self?.workspace.activeTabList.trees ?? []
             return trees.indices.contains(index) ? trees[index].manualTitle : nil
         }
+        tabBar.onCloseTab = { [weak self] index in
+            self?.closeTab(atIndex: index)
+        }
 
         NSLayoutConstraint.activate([
             tabBar.topAnchor.constraint(equalTo: container.topAnchor),
@@ -351,6 +354,19 @@ final class TerminalViewController: NSViewController {
     @objc func closeTab(_ sender: Any?) {
         let tabList = workspace.activeTabList
         tabList.closeTab(at: tabList.activeIndex)
+        refreshTabBar()
+        refreshSidebar()
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// Close the tab at an explicit index (called by the tab bar × button).
+    /// No-op if it is the only tab.
+    func closeTab(atIndex index: Int) {
+        let tabList = workspace.activeTabList
+        tabList.closeTab(at: index)
         refreshTabBar()
         refreshSidebar()
         rebuildSurfaceNodeView()
