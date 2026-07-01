@@ -8,12 +8,13 @@ public final class ProjectRuntime {
     public let tabList: TabList
 
     public init(id: UUID = UUID(), name: String, rootPath: String,
-                isPinned: Bool = false, tabList: TabList = TabList()) {
+                isPinned: Bool = false, tabList: TabList? = nil) {
         self.id = id
         self.name = name
         self.rootPath = rootPath
         self.isPinned = isPinned
-        self.tabList = tabList
+        // Default the project's tab list to open terminals in the project root.
+        self.tabList = tabList ?? TabList(defaultWorkingDir: rootPath)
     }
 }
 

@@ -132,7 +132,9 @@ public final class SurfaceRegistry {
                 v.delegate = s
                 state = s
             }
-            v.configuration = TerminalSurfaceOptions(backend: .exec)
+            // Spawn the shell in the surface's working directory (e.g. the project
+            // folder) — without this, .exec always starts in the app's cwd.
+            v.configuration = TerminalSurfaceOptions(backend: .exec, workingDirectory: surface.workingDir)
             v.translatesAutoresizingMaskIntoConstraints = false
             return (v, state)
         }

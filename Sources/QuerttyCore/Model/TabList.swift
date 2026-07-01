@@ -16,9 +16,14 @@ public final class TabList {
     /// Index into `trees` for the active tab.
     public private(set) var activeIndex: Int
 
-    /// Creates a list seeded with one fresh single-pane tab.
-    public init() {
-        trees = [TabList.freshTree()]
+    /// Working directory new tabs/panes spawn in (e.g. the owning project's root).
+    private let defaultWorkingDir: String
+
+    /// Creates a list seeded with one fresh single-pane tab whose terminal opens
+    /// in `defaultWorkingDir` (defaults to the user's home directory).
+    public init(defaultWorkingDir: String = NSHomeDirectory()) {
+        self.defaultWorkingDir = defaultWorkingDir
+        trees = [TabList.freshTree(workingDir: defaultWorkingDir)]
         activeIndex = 0
     }
 
@@ -46,7 +51,7 @@ public final class TabList {
 
     /// Appends a new single-pane tab and makes it active.
     public func newTab() {
-        trees.append(TabList.freshTree())
+        trees.append(TabList.freshTree(workingDir: defaultWorkingDir))
         activeIndex = trees.count - 1
     }
 
@@ -93,8 +98,8 @@ public final class TabList {
         "Tab \(index + 1)"
     }
 
-    private static func freshTree() -> PaneTree {
-        let surface = Surface(workingDir: NSHomeDirectory())
+    private static func freshTree(workingDir: String) -> PaneTree {
+        let surface = Surface(workingDir: workingDir)
         return PaneTree(layout: Layout(root: .leaf(surface)), focusedSurfaceID: surface.id)
     }
 }

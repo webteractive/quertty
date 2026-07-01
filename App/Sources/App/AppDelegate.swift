@@ -253,6 +253,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addProject.keyEquivalentModifierMask = [.command]
         projectMenu.addItem(addProject)
 
+        // Target the view-controller actions DIRECTLY at the (retained) TVC rather
+        // than relying on the responder chain. Responder-chain routing only reaches
+        // the TVC when a terminal pane holds first responder, so ⌘W/⇧⌘W etc. would
+        // silently no-op whenever focus wasn't on a pane. An explicit target always fires.
+        for item in shellMenu.items + projectMenu.items where item.action != nil {
+            item.target = terminalViewController
+        }
+
         NSApp.mainMenu = mainMenu
     }
 }
