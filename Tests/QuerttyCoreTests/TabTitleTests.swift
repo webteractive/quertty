@@ -6,8 +6,15 @@ import Foundation
     #expect(TabTitle.display(manualTitle: "mine", focusedSurfaceTitle: "vim", workingDir: "/x", index: 0) == "mine")
 }
 
-@Test func tabTitleUsesFocusedTitleWhenNoManual() {
-    #expect(TabTitle.display(manualTitle: nil, focusedSurfaceTitle: "vim", workingDir: "/x/y", index: 0) == "vim")
+@Test func tabTitleDefaultsToWorkingDirBasename() {
+    // pwd is the default, taking precedence over the terminal-reported title.
+    #expect(TabTitle.display(manualTitle: nil, focusedSurfaceTitle: "vim", workingDir: "/x/y", index: 0) == "y")
+}
+
+@Test func tabTitleUsesFocusedTitleWhenNoWorkingDir() {
+    #expect(TabTitle.display(manualTitle: nil, focusedSurfaceTitle: "vim", workingDir: nil, index: 0) == "vim")
+    // "/" has no usable basename, so it also falls through to the title.
+    #expect(TabTitle.display(manualTitle: nil, focusedSurfaceTitle: "vim", workingDir: "/", index: 0) == "vim")
 }
 
 @Test func tabTitleFallsBackToWorkingDirBasename() {
