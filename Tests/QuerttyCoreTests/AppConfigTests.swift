@@ -24,9 +24,9 @@ import Testing
 @Test func configIgnoresCommentsAndBlankLines() {
     let text = """
     # a comment
-    appearance = light   # inline comment kept out of the value
 
       theme-dark = Ember
+    appearance = light
 
     # trailing comment
     """
@@ -36,6 +36,35 @@ import Testing
     #expect(c.themeLight == "Daylight") // untouched → default
 }
 
+@Test func configForwardsPastedGhosttyLines() {
+    // Reserved keys stay quertty's; everything else is forwarded verbatim.
+    let text = """
+    appearance = dark
+    theme-dark = Frost
+    font-family = JetBrains Mono
+    cursor-style = bar
+    background = #1e1e2e
+    keybind = ctrl+a=new_tab
+    """
+    let c = AppConfig.parse(text)
+    #expect(c.appearance == .dark)
+    #expect(c.themeDark == "Frost")
+    #expect(c.ghostty == [
+        GhosttyDirective(key: "font-family", value: "JetBrains Mono"),
+        GhosttyDirective(key: "cursor-style", value: "bar"),
+        GhosttyDirective(key: "background", value: "#1e1e2e"),   // inline # preserved
+        GhosttyDirective(key: "keybind", value: "ctrl+a=new_tab"),
+    ])
+}
+
+@Test func configGhosttyPassthroughRoundTrips() {
+    let config = AppConfig(appearance: .dark, ghostty: [
+        GhosttyDirective(key: "font-size", value: "14"),
+        GhosttyDirective(key: "window-padding-x", value: "8"),
+    ])
+    #expect(AppConfig.parse(config.rendered()) == config)
+}
+
 @Test func configKeysAreCaseInsensitiveAndTrimmed() {
     let text = "  APPEARANCE  =  Dark  \n THEME-DARK = Nocturne "
     let c = AppConfig.parse(text)
@@ -43,15 +72,11 @@ import Testing
     #expect(c.themeDark == "Nocturne")
 }
 
-@Test func configUnknownKeysAndBadAppearanceIgnored() {
-    let text = """
-    appearance = neon
-    font-size = 14
-    theme-dark = Frost
-    """
-    let c = AppConfig.parse(text)
+@Test func configBadAppearanceValueDefaults() {
+    let c = AppConfig.parse("appearance = neon\ntheme-dark = Frost")
     #expect(c.appearance == .system)   // "neon" invalid → default
-    #expect(c.themeDark == "Frost")    // valid key still applied
+    #expect(c.themeDark == "Frost")    // valid reserved key still applied
+    #expect(c.ghostty.isEmpty)
 }
 
 @Test func configStoreSeedsAndReloadsFromDisk() throws {

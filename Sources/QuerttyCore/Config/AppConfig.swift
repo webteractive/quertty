@@ -14,11 +14,25 @@ public enum AppearanceMode: String, Sendable, CaseIterable {
     case light
 }
 
+// MARK: - GhosttyDirective
+
+/// A raw ghostty config directive to forward verbatim to libghostty, sourced
+/// from `ghostty.<key> = <value>` lines in quertty's config. Order is preserved
+/// and duplicate keys are allowed (ghostty's `keybind`/`palette` repeat).
+public struct GhosttyDirective: Equatable, Sendable {
+    public let key: String
+    public let value: String
+    public init(key: String, value: String) {
+        self.key = key
+        self.value = value
+    }
+}
+
 // MARK: - AppConfig
 
 /// User configuration, parsed from a ghostty-style plain-text file
-/// (`key = value`, `#` comments). Unknown keys are ignored so the format can
-/// grow without breaking older configs.
+/// (`key = value`, full-line `#` comments). Unknown keys are ignored so the
+/// format can grow without breaking older configs.
 public struct AppConfig: Equatable, Sendable {
 
     public var appearance: AppearanceMode
@@ -27,6 +41,9 @@ public struct AppConfig: Equatable, Sendable {
     public var themeDark: String
     /// Scheme name used for the light appearance.
     public var themeLight: String
+    /// Raw ghostty directives (from `ghostty.<key> = <value>` lines), forwarded
+    /// to the terminal unchanged.
+    public var ghostty: [GhosttyDirective]
 
     public static let defaultThemeDark = "Twilight"
     public static let defaultThemeLight = "Daylight"
@@ -34,32 +51,37 @@ public struct AppConfig: Equatable, Sendable {
     public init(
         appearance: AppearanceMode = .system,
         themeDark: String = AppConfig.defaultThemeDark,
-        themeLight: String = AppConfig.defaultThemeLight
+        themeLight: String = AppConfig.defaultThemeLight,
+        ghostty: [GhosttyDirective] = []
     ) {
         self.appearance = appearance
         self.themeDark = themeDark
         self.themeLight = themeLight
+        self.ghostty = ghostty
     }
 
     // MARK: Parsing
 
-    /// Parses ghostty-style config text.
+    /// Parses quertty config text (a superset of ghostty's format).
     ///
-    /// Rules: one `key = value` per line; text after `#` is a comment; blank
-    /// lines are skipped; keys are case-insensitive; values are trimmed. A
-    /// missing key keeps its default; an unrecognized `appearance` value keeps
-    /// the default (`.system`); unknown keys are ignored.
+    /// Rules: one `key = value` per line; a line whose first non-space character
+    /// is `#` is a full-line comment (inline `#` is NOT a comment, so `#`-prefixed
+    /// color values survive); blank lines are skipped; keys are case-insensitive;
+    /// values are trimmed.
+    ///
+    /// `appearance`, `theme-dark`, `theme-light` are quertty's own keys. **Every
+    /// other `key = value` line is treated as a ghostty directive** and forwarded
+    /// verbatim — so a user can paste their existing ghostty config straight in.
+    /// Ghostty defines none of the three reserved keys, so there's no collision.
     public static func parse(_ text: String) -> AppConfig {
         var config = AppConfig()
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            var line = String(rawLine)
-            if let hash = line.firstIndex(of: "#") {
-                line = String(line[..<hash])
-            }
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, let eq = trimmed.firstIndex(of: "=") else { continue }
+            let trimmed = String(rawLine).trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { continue }   // full-line comments only
+            guard let eq = trimmed.firstIndex(of: "=") else { continue }
 
-            let key = trimmed[..<eq].trimmingCharacters(in: .whitespaces).lowercased()
+            let rawKey = trimmed[..<eq].trimmingCharacters(in: .whitespaces)
+            let key = rawKey.lowercased()
             let value = String(trimmed[trimmed.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
             guard !value.isEmpty else { continue }
 
@@ -73,7 +95,8 @@ public struct AppConfig: Equatable, Sendable {
             case "theme-light":
                 config.themeLight = value
             default:
-                break
+                // Anything else is a pasted ghostty directive → forward verbatim.
+                config.ghostty.append(GhosttyDirective(key: rawKey, value: value))
             }
         }
         return config
@@ -84,9 +107,9 @@ public struct AppConfig: Equatable, Sendable {
     /// Renders this config back to the documented file format (used when the app
     /// persists a runtime change, e.g. the scheme switcher).
     public func rendered() -> String {
-        """
+        var out = """
         # quertty configuration
-        # Plain text, one `key = value` per line. Text after # is a comment.
+        # Plain text, one `key = value` per line. A line starting with # is a comment.
 
         # Appearance mode: system | dark | light
         #   system -> follow the macOS appearance (uses theme-dark or theme-light)
@@ -99,7 +122,14 @@ public struct AppConfig: Equatable, Sendable {
         theme-dark  = \(themeDark)
         theme-light = \(themeLight)
 
+        # Paste any ghostty config lines below — they're forwarded to the terminal
+        # as-is (e.g. font-family, font-size, cursor-style, window-padding-x, keybind).
+
         """
+        if !ghostty.isEmpty {
+            out += ghostty.map { "\($0.key) = \($0.value)" }.joined(separator: "\n") + "\n"
+        }
+        return out
     }
 
     // MARK: Default file
@@ -119,6 +149,13 @@ public struct AppConfig: Equatable, Sendable {
     # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
     theme-dark  = Twilight
     theme-light = Daylight
+
+    # Paste your ghostty config below — any non-quertty key is forwarded to the
+    # terminal verbatim, so an existing ghostty config works as-is. For example:
+    #   font-family = JetBrains Mono
+    #   font-size = 14
+    #   cursor-style = bar
+    #   window-padding-x = 8
 
     """
 }
