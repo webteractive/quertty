@@ -37,6 +37,13 @@ enum QColorScheme: String, CaseIterable {
         let key = name.lowercased()
         return allCases.first { $0.rawValue == key || $0.displayName.lowercased() == key }
     }
+
+    /// Whether this scheme is a dark scheme (drives which axis it belongs to).
+    var isDark: Bool { QTheme.palette(for: self).isDark }
+
+    /// Schemes for the dark / light axis, in declaration order.
+    static var darkSchemes: [QColorScheme] { allCases.filter(\.isDark) }
+    static var lightSchemes: [QColorScheme] { allCases.filter { !$0.isDark } }
 }
 
 /// A fully-specified palette. Values are hex strings WITHOUT a leading `#`

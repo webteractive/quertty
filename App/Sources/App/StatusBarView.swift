@@ -5,13 +5,19 @@ import QuerttyCore
 
 /// The bottom status strip (handoff: 28pt, `bg0`, mono 11). Three zones:
 /// a left **git** cluster (branch · ↑ahead ↓behind · ●changes), the focused
-/// pane's working directory centered, and a right cluster of ambient info
-/// (active color scheme · shell · libghostty version).
+/// pane's working directory centered, and a right cluster of ambient info +
+/// switchers: appearance mode (click to cycle), color scheme (click to cycle),
+/// shell, and libghostty version.
 ///
-/// The view is dumb: `update(...)` and `updateGit(...)` set content;
-/// `applyTheme()` re-reads colors/fonts from `QTheme` on a scheme change.
+/// The view is dumb: `update(...)` / `updateGit(...)` set content and
+/// `applyTheme()` re-reads colors/fonts; user intent is reported via closures.
 @MainActor
 final class StatusBarView: NSView {
+
+    /// Selects an appearance axis (system / dark / light) from the status-bar menu.
+    var onSelectAppearance: ((AppearanceMode) -> Void)?
+    /// Selects a color scheme (within the current axis) from the status-bar menu.
+    var onSelectScheme: ((QColorScheme) -> Void)?
 
     private let topBorder = NSView()
 
@@ -26,18 +32,22 @@ final class StatusBarView: NSView {
     // Center: working directory.
     private let cwdLabel = NSTextField(labelWithString: "")
 
-    // Right: scheme · shell · libghostty.
+    // Right: appearance · scheme · shell · libghostty.
+    private let appearanceButton = NSButton()
+    private let sep0 = NSTextField(labelWithString: "·")
     private let schemeDot = NSView()
-    private let schemeLabel = NSTextField(labelWithString: "")
+    private let schemeButton = NSButton()
     private let sep1 = NSTextField(labelWithString: "·")
     private let shellLabel = NSTextField(labelWithString: "")
     private let sep2 = NSTextField(labelWithString: "·")
     private let ghosttyLabel = NSTextField(labelWithString: "")
     private let rightStack = NSStackView()
 
-    private var allLabels: [NSTextField] {
+    private var appearanceMode = "System"
+
+    private var plainLabels: [NSTextField] {
         [branchLabel, aheadLabel, behindLabel, changesLabel,
-         cwdLabel, schemeLabel, sep1, shellLabel, sep2, ghosttyLabel]
+         cwdLabel, sep0, sep1, shellLabel, sep2, ghosttyLabel]
     }
 
     override init(frame frameRect: NSRect) {
@@ -45,11 +55,10 @@ final class StatusBarView: NSView {
         wantsLayer = true
         translatesAutoresizingMaskIntoConstraints = false
 
-        for label in allLabels {
+        for label in plainLabels {
             label.lineBreakMode = .byTruncatingTail
             label.translatesAutoresizingMaskIntoConstraints = false
         }
-        // The path is likeliest to overflow — keep its tail visible, let it shrink.
         cwdLabel.lineBreakMode = .byTruncatingHead
         cwdLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
@@ -67,8 +76,13 @@ final class StatusBarView: NSView {
         topBorder.wantsLayer = true
         topBorder.translatesAutoresizingMaskIntoConstraints = false
 
+        configureSwitch(appearanceButton, action: #selector(appearanceClicked))
+        appearanceButton.imagePosition = .imageLeading
+        appearanceButton.imageHugsTitle = true
+        configureSwitch(schemeButton, action: #selector(schemeClicked))
+
         configureStack(leftStack, views: [branchIcon, branchLabel, aheadLabel, behindLabel, changesLabel])
-        configureStack(rightStack, views: [schemeDot, schemeLabel, sep1, shellLabel, sep2, ghosttyLabel])
+        configureStack(rightStack, views: [appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel])
 
         addSubview(topBorder)
         addSubview(leftStack)
@@ -76,7 +90,7 @@ final class StatusBarView: NSView {
         addSubview(rightStack)
 
         let cwdCenter = cwdLabel.centerXAnchor.constraint(equalTo: centerXAnchor)
-        cwdCenter.priority = .defaultLow   // yields to the leading/trailing limits when tight
+        cwdCenter.priority = .defaultLow
 
         NSLayoutConstraint.activate([
             topBorder.topAnchor.constraint(equalTo: topAnchor),
@@ -118,13 +132,72 @@ final class StatusBarView: NSView {
         stack.setHuggingPriority(.required, for: .horizontal)
     }
 
+    private func configureSwitch(_ button: NSButton, action: Selector) {
+        button.isBordered = false
+        button.bezelStyle = .inline
+        button.target = self
+        button.action = action
+        button.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    // MARK: - Actions
+
+    /// Pops up an appearance picker (System / Dark / Light) above the button.
+    @objc private func appearanceClicked() {
+        let menu = NSMenu()
+        for mode in [AppearanceMode.system, .dark, .light] {
+            let item = NSMenuItem(title: mode.rawValue.capitalized,
+                                  action: #selector(pickAppearance(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = mode.rawValue
+            item.state = (mode.rawValue.capitalized == appearanceMode) ? .on : .off
+            menu.addItem(item)
+        }
+        popUp(menu, from: appearanceButton)
+    }
+
+    /// Pops up a scheme picker for the current axis above the button.
+    @objc private func schemeClicked() {
+        let menu = NSMenu()
+        let scoped = QTheme.current.isDark ? QColorScheme.darkSchemes : QColorScheme.lightSchemes
+        for scheme in scoped {
+            let item = NSMenuItem(title: scheme.displayName,
+                                  action: #selector(pickScheme(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = scheme.rawValue
+            item.state = (scheme == QTheme.scheme) ? .on : .off
+            menu.addItem(item)
+        }
+        popUp(menu, from: schemeButton)
+    }
+
+    private func popUp(_ menu: NSMenu, from button: NSButton) {
+        // Anchor above the button (status bar sits at the window bottom).
+        let point = NSPoint(x: 0, y: -6)
+        menu.popUp(positioning: nil, at: point, in: button)
+    }
+
+    @objc private func pickAppearance(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let mode = AppearanceMode(rawValue: raw) else { return }
+        onSelectAppearance?(mode)
+    }
+
+    @objc private func pickScheme(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let scheme = QColorScheme(rawValue: raw) else { return }
+        onSelectScheme?(scheme)
+    }
+
     // MARK: - Content
 
-    func update(cwd: String, scheme: String, shell: String, ghostty: String) {
+    func update(cwd: String, appearance: String, scheme: String, shell: String, ghostty: String) {
         cwdLabel.stringValue = cwd
-        schemeLabel.stringValue = scheme
+        appearanceMode = appearance
         shellLabel.stringValue = shell
         ghosttyLabel.stringValue = ghostty
+        styleAppearanceButton()
+        styleSchemeButton(scheme)
     }
 
     func updateGit(_ status: GitStatus) {
@@ -151,17 +224,50 @@ final class StatusBarView: NSView {
         branchIcon.contentTintColor = theme.purpleColor
 
         let font = QTheme.monoFont(size: 11)
-        for label in allLabels { label.font = font }
+        for label in plainLabels { label.font = font }
 
         cwdLabel.textColor = theme.fg2Color
         branchLabel.textColor = theme.purpleColor
         aheadLabel.textColor = theme.greenColor
         behindLabel.textColor = theme.redColor
         changesLabel.textColor = theme.yellowColor
-        schemeLabel.textColor = theme.accentColor
         shellLabel.textColor = theme.fg2Color
         ghosttyLabel.textColor = theme.fg2Color
+        sep0.textColor = theme.fg3Color
         sep1.textColor = theme.fg3Color
         sep2.textColor = theme.fg3Color
+
+        styleAppearanceButton()
+        styleSchemeButton(schemeButton.title)
+    }
+
+    private func styleAppearanceButton() {
+        let icon: String
+        switch appearanceMode.lowercased() {
+        case "dark":  icon = "moon.fill"
+        case "light": icon = "sun.max.fill"
+        default:      icon = "circle.lefthalf.filled"
+        }
+        appearanceButton.image = NSImage(systemSymbolName: icon, accessibilityDescription: appearanceMode)
+        appearanceButton.contentTintColor = QTheme.current.fg2Color
+        appearanceButton.attributedTitle = NSAttributedString(
+            string: " \(appearanceMode)",
+            attributes: [
+                .font: QTheme.monoFont(size: 11),
+                .foregroundColor: QTheme.current.fg2Color,
+            ]
+        )
+        appearanceButton.toolTip = "Appearance: \(appearanceMode) — click to cycle"
+    }
+
+    private func styleSchemeButton(_ name: String) {
+        schemeButton.attributedTitle = NSAttributedString(
+            string: name,
+            attributes: [
+                .font: QTheme.monoFont(size: 11),
+                .foregroundColor: QTheme.current.accentColor,
+            ]
+        )
+        schemeButton.toolTip = "Color scheme: \(name) — click to cycle (⇧⌘T)"
     }
 }

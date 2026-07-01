@@ -94,6 +94,21 @@ final class TerminalViewController: NSViewController {
     /// current arrangement — surviving crashes/force-quits, not just clean quit.
     var onWorkspaceDidChange: (() -> Void)?
 
+    /// Called to switch to a specific color scheme (owner applies + persists).
+    var onSelectScheme: ((QColorScheme) -> Void)?
+
+    /// Called to cycle to the next color scheme (⌘⇧T).
+    var onCycleScheme: (() -> Void)?
+
+    /// Called to switch the appearance axis (system / dark / light).
+    var onSetAppearance: ((AppearanceMode) -> Void)?
+
+    /// Called to cycle the appearance axis (status-bar switcher).
+    var onCycleAppearance: (() -> Void)?
+
+    /// Supplies the current appearance-mode display name ("System"/"Dark"/"Light").
+    var appearanceModeName: (() -> String)?
+
     // MARK: - View lifecycle
 
     override func loadView() {
@@ -225,14 +240,7 @@ final class TerminalViewController: NSViewController {
 
         // Wire sidebar callbacks.
         sidebar.onSelectProject = { [weak self] index in
-            guard let self else { return }
-            self.workspace.select(index: index)
-            self.refreshTabBar()
-            self.rebuildSurfaceNodeView()
-            self.refreshSidebar()
-            if let focused = self.focusedTerminalView() {
-                self.view.window?.makeFirstResponder(focused)
-            }
+            self?.selectProject(at: index)
         }
 
         sidebar.onSelectTab = { [weak self] projectIndex, tabIndex in
@@ -308,6 +316,8 @@ final class TerminalViewController: NSViewController {
         guard let container = contentContainer else { return }
 
         let statusBar = StatusBarView()
+        statusBar.onSelectAppearance = { [weak self] mode in self?.onSetAppearance?(mode) }
+        statusBar.onSelectScheme = { [weak self] scheme in self?.onSelectScheme?(scheme) }
         container.addSubview(statusBar)
         NSLayoutConstraint.activate([
             statusBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -333,6 +343,7 @@ final class TerminalViewController: NSViewController {
             .lastPathComponent
         statusBar.update(
             cwd: Self.abbreviatingHome(cwd),
+            appearance: appearanceModeName?() ?? "System",
             scheme: QTheme.scheme.displayName,
             shell: shell,
             ghostty: "libghostty \(Self.libghosttyVersion)"
@@ -425,7 +436,7 @@ final class TerminalViewController: NSViewController {
 
     /// The palette's command set, mapped to the controller's existing actions.
     private func buildCommands() -> [PaletteCommand] {
-        [
+        let base: [PaletteCommand] = [
             PaletteCommand(glyph: "+", label: "New Tab", kbd: "⌘T") { [weak self] in self?.newTab(nil) },
             PaletteCommand(glyph: "▮", label: "Split Pane Right", kbd: "⌘D") { [weak self] in self?.splitVertical(nil) },
             PaletteCommand(glyph: "▬", label: "Split Pane Down", kbd: "⇧⌘D") { [weak self] in self?.splitHorizontal(nil) },
@@ -436,7 +447,28 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "★", label: "Pin / Unpin Current Project", kbd: "") { [weak self] in self?.togglePinActiveProject() },
             PaletteCommand(glyph: "＋", label: "Add Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
             PaletteCommand(glyph: "⛶", label: "Toggle Sidebar", kbd: "⌘B") { [weak self] in self?.toggleSidebar(nil) },
+            PaletteCommand(glyph: "◐", label: "Cycle Color Scheme", kbd: "⇧⌘T") { [weak self] in self?.onCycleScheme?() },
+            PaletteCommand(glyph: "◑", label: "Cycle Appearance", kbd: "⇧⌘A") { [weak self] in self?.onCycleAppearance?() },
+            PaletteCommand(glyph: "◑", label: "Appearance: System", kbd: "") { [weak self] in self?.onSetAppearance?(.system) },
+            PaletteCommand(glyph: "●", label: "Appearance: Dark", kbd: "") { [weak self] in self?.onSetAppearance?(.dark) },
+            PaletteCommand(glyph: "○", label: "Appearance: Light", kbd: "") { [weak self] in self?.onSetAppearance?(.light) },
         ]
+        // Jump to any project (focuses its active pane).
+        let projectCommands = workspace.projects.enumerated().map { index, project in
+            PaletteCommand(glyph: "◆", label: "Go to Project: \(project.name)", kbd: "") { [weak self] in
+                self?.selectProject(at: index)
+            }
+        }
+
+        // Scheme picks are scoped to the current axis, so they never flip dark↔light.
+        let scoped = QTheme.current.isDark ? QColorScheme.darkSchemes : QColorScheme.lightSchemes
+        let schemeCommands = scoped.map { scheme in
+            PaletteCommand(glyph: "◐", label: "Scheme: \(scheme.displayName)", kbd: "") { [weak self] in
+                self?.onSelectScheme?(scheme)
+            }
+        }
+
+        return base + projectCommands + schemeCommands
     }
 
     private func togglePinActiveProject() {
@@ -624,6 +656,17 @@ final class TerminalViewController: NSViewController {
         refreshTabBar()
         refreshSidebar()
         rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// Switches to the project at `index` and focuses its active pane.
+    func selectProject(at index: Int) {
+        workspace.select(index: index)
+        refreshTabBar()
+        rebuildSurfaceNodeView()
+        refreshSidebar()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
         }

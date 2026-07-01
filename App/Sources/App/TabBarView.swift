@@ -151,7 +151,6 @@ final class TabBarView: NSView {
             sidebarButton.imageScaling = .scaleProportionallyUpOrDown
             sidebarButton.contentTintColor = QTheme.current.fgColor
         } else {
-            // Fallback glyph if the SF Symbol is unavailable.
             sidebarButton.attributedTitle = NSAttributedString(
                 string: "☰",
                 attributes: [

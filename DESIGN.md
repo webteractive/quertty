@@ -89,7 +89,7 @@ and unit-tested); the app resolves it to a `QColorScheme` in `AppDelegate`.
 
 ```
 appearance  = system   # system | dark | light
-theme-dark  = Midnight
+theme-dark  = Twilight
 theme-light = Daylight
 ```
 
@@ -182,17 +182,20 @@ These are enforceable. A change that violates one should be corrected before mer
 
 ---
 
-## Roadmap (in the handoff, not yet built)
+## Roadmap
 
-These are specified in `quertty.dc.html` and tracked here as follow-up work:
+Handoff features, and their status.
 
+**Shipped:**
+- **Status bar** — git (branch/ahead/behind/changes) · cwd · scheme · shell · libghostty version.
+- **Sidebar** — filter field + `Pinned`/`Projects` section headers with counts.
 - **Command palette** (⌘K) — fuzzy command list.
-- **Status bar** (28pt) — git / cwd / scheme / shell / encoding / libghostty version.
-- **Sidebar polish** — filter field, `Pinned`/`Projects` section headers with
-  counts, project glyphs, and per-tab pulse-dot status.
-- **Scheme switcher** (⌘⇧T) — pick `theme-dark`/`theme-light` from the UI and
-  live-reload the config file (config-driven switching already works; only the
-  in-app picker + file-watch are pending).
-- **Collapse sidebar** (⌘B).
-- **AI-agent status dots** — feed detection state into the sidebar/tab status dots
-  (green=running, yellow=needs-attention, fg3=idle).
+- **Collapse sidebar** (⌘B) — with a tab-bar toggle button.
+- **Scheme switcher** (⌘⇧T) — cycles schemes live and persists the choice to
+  `theme-dark`/`theme-light`; per-scheme commands are in the palette too.
+
+**Pending:**
+- **Project glyphs + per-tab pulse-dot status** in the sidebar tree.
+- **Config file-watch** — reload on external edits to `~/.config/quertty/config`.
+- **AI-agent status dots** — feed detection state into the sidebar/tab status
+  dots (green=running, yellow=needs-attention, fg3=idle).

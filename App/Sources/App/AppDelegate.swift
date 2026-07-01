@@ -64,6 +64,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Autosave on every structural change (debounced), so the on-disk
         // workspace always reflects the current layout — not just on clean quit.
         tvc.onWorkspaceDidChange = { [weak self] in self?.scheduleSave() }
+        tvc.onSelectScheme = { [weak self] scheme in self?.applyScheme(scheme) }
+        tvc.onCycleScheme = { [weak self] in self?.cycleColorScheme(nil) }
+        tvc.onSetAppearance = { [weak self] mode in self?.setAppearanceMode(mode) }
+        tvc.onCycleAppearance = { [weak self] in self?.cycleAppearanceMode() }
+        tvc.appearanceModeName = { [weak self] in (self?.appConfig.appearance ?? .system).rawValue.capitalized }
 
         let window = QuerttyWindow(
             contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -136,6 +141,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         QTheme.scheme = newScheme
         window?.backgroundColor = QTheme.current.bg1Color
         terminalViewController?.applyTheme()
+    }
+
+    /// Cycles to the next scheme WITHIN the current dark/light axis (⇧⌘T), so it
+    /// never crosses the light↔dark boundary. Applies + persists.
+    @objc func cycleColorScheme(_ sender: Any?) {
+        let scoped = QTheme.current.isDark ? QColorScheme.darkSchemes : QColorScheme.lightSchemes
+        guard !scoped.isEmpty else { return }
+        let index = scoped.firstIndex(of: QTheme.scheme) ?? -1
+        applyScheme(scoped[(index + 1) % scoped.count])
+    }
+
+    /// Applies `scheme` live (chrome + terminals) and persists it to the config
+    /// as the dark or light choice (matching the scheme's own darkness).
+    ///
+    /// Does NOT touch the appearance axis: schemes only change within the current
+    /// axis, so the existing app appearance already matches.
+    func applyScheme(_ scheme: QColorScheme) {
+        QTheme.scheme = scheme
+        window?.backgroundColor = QTheme.current.bg1Color
+        terminalViewController?.applyTheme()
+
+        if scheme.isDark {
+            appConfig.themeDark = scheme.displayName
+        } else {
+            appConfig.themeLight = scheme.displayName
+        }
+        configStore.save(appConfig)
+    }
+
+    /// Switches the appearance axis (system / dark / light), re-resolving the
+    /// scheme, updating chrome + observation, and persisting.
+    func setAppearanceMode(_ mode: AppearanceMode) {
+        appConfig.appearance = mode
+        QTheme.scheme = resolvedScheme()
+        NSApp.appearance = appearanceOverride
+        window?.appearance = appearanceOverride
+        window?.backgroundColor = QTheme.current.bg1Color
+        terminalViewController?.applyTheme()
+        startObservingSystemAppearance()   // (re)arm or disarm the OS-follow KVO
+        configStore.save(appConfig)
+    }
+
+    @objc private func setAppearanceSystem(_ sender: Any?) { setAppearanceMode(.system) }
+    @objc private func setAppearanceDark(_ sender: Any?) { setAppearanceMode(.dark) }
+    @objc private func setAppearanceLight(_ sender: Any?) { setAppearanceMode(.light) }
+
+    @objc func cycleAppearance(_ sender: Any?) { cycleAppearanceMode() }
+
+    /// Cycles the appearance axis System → Dark → Light → System.
+    func cycleAppearanceMode() {
+        let order: [AppearanceMode] = [.system, .dark, .light]
+        let index = order.firstIndex(of: appConfig.appearance) ?? 0
+        setAppearanceMode(order[(index + 1) % order.count])
     }
 
     func applicationWillTerminate(_: Notification) {
@@ -327,6 +385,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleSidebar.keyEquivalentModifierMask = [.command]
         viewMenu.addItem(toggleSidebar)
 
+        // "Cycle Color Scheme"  ⇧⌘T — targets the app delegate (owns the config).
+        let cycleScheme = NSMenuItem(
+            title: "Cycle Color Scheme",
+            action: #selector(cycleColorScheme(_:)),
+            keyEquivalent: "T"
+        )
+        cycleScheme.keyEquivalentModifierMask = [.command, .shift]
+        cycleScheme.target = self
+        viewMenu.addItem(cycleScheme)
+
+        // "Cycle Appearance"  ⇧⌘A
+        let cycleAppearanceItem = NSMenuItem(
+            title: "Cycle Appearance",
+            action: #selector(cycleAppearance(_:)),
+            keyEquivalent: "A"
+        )
+        cycleAppearanceItem.keyEquivalentModifierMask = [.command, .shift]
+        cycleAppearanceItem.target = self
+        viewMenu.addItem(cycleAppearanceItem)
+
+        // "Appearance" submenu — the dark/light/system axis.
+        let appearanceItem = NSMenuItem()
+        appearanceItem.title = "Appearance"
+        let appearanceMenu = NSMenu(title: "Appearance")
+        appearanceItem.submenu = appearanceMenu
+        for (title, action) in [
+            ("System", #selector(setAppearanceSystem(_:))),
+            ("Dark", #selector(setAppearanceDark(_:))),
+            ("Light", #selector(setAppearanceLight(_:))),
+        ] {
+            let entry = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            entry.target = self
+            appearanceMenu.addItem(entry)
+        }
+        viewMenu.addItem(appearanceItem)
+
         // ── Project menu ──────────────────────────────────────────────────────
         let projectMenuItem = NSMenuItem()
         mainMenu.addItem(projectMenuItem)
@@ -346,7 +440,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // than relying on the responder chain. Responder-chain routing only reaches
         // the TVC when a terminal pane holds first responder, so ⌘W/⇧⌘W etc. would
         // silently no-op whenever focus wasn't on a pane. An explicit target always fires.
-        for item in shellMenu.items + projectMenu.items + viewMenu.items where item.action != nil {
+        // Route menu actions directly at the (retained) TVC, except items that
+        // already have an explicit target (e.g. the scheme cycler → app delegate).
+        for item in shellMenu.items + projectMenu.items + viewMenu.items
+        where item.action != nil && item.target == nil {
             item.target = terminalViewController
         }
 
