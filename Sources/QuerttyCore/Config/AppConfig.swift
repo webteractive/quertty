@@ -28,7 +28,7 @@ public struct AppConfig: Equatable, Sendable {
     /// Scheme name used for the light appearance.
     public var themeLight: String
 
-    public static let defaultThemeDark = "Midnight"
+    public static let defaultThemeDark = "Twilight"
     public static let defaultThemeLight = "Daylight"
 
     public init(
@@ -79,6 +79,29 @@ public struct AppConfig: Equatable, Sendable {
         return config
     }
 
+    // MARK: Rendering
+
+    /// Renders this config back to the documented file format (used when the app
+    /// persists a runtime change, e.g. the scheme switcher).
+    public func rendered() -> String {
+        """
+        # quertty configuration
+        # Plain text, one `key = value` per line. Text after # is a comment.
+
+        # Appearance mode: system | dark | light
+        #   system -> follow the macOS appearance (uses theme-dark or theme-light)
+        #   dark   -> always use theme-dark
+        #   light  -> always use theme-light
+        appearance = \(appearance.rawValue)
+
+        # Color scheme for each appearance.
+        # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
+        theme-dark  = \(themeDark)
+        theme-light = \(themeLight)
+
+        """
+    }
+
     // MARK: Default file
 
     /// The documented starter config written on first launch.
@@ -94,7 +117,7 @@ public struct AppConfig: Equatable, Sendable {
 
     # Color scheme for each appearance.
     # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
-    theme-dark  = Midnight
+    theme-dark  = Twilight
     theme-light = Daylight
 
     """

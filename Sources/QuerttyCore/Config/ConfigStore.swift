@@ -38,6 +38,14 @@ public struct ConfigStore {
         return AppConfig()
     }
 
+    /// Persists `config` to disk in the documented format (best-effort). Used
+    /// when the app changes a setting at runtime (e.g. the scheme switcher).
+    public func save(_ config: AppConfig) {
+        let dir = fileURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? config.rendered().write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+
     /// Writes the starter config only when no file exists yet. Errors (sandbox,
     /// read-only home) are swallowed — a missing config simply means defaults.
     public func writeDefaultIfMissing() {

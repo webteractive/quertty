@@ -5,7 +5,7 @@ import Testing
 @Test func configDefaultsWhenEmpty() {
     let c = AppConfig.parse("")
     #expect(c.appearance == .system)
-    #expect(c.themeDark == "Midnight")
+    #expect(c.themeDark == "Twilight")
     #expect(c.themeLight == "Daylight")
 }
 
@@ -73,4 +73,16 @@ import Testing
     // A user edit is read back on the next load.
     try "appearance = light\ntheme-light = Paper".write(to: tmp, atomically: true, encoding: .utf8)
     #expect(store.load().appearance == .light)
+}
+
+@Test func configStoreSavesAndReloadsRoundTrip() {
+    let tmp = FileManager.default.temporaryDirectory
+        .appendingPathComponent("quertty-config-save-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("config")
+    defer { try? FileManager.default.removeItem(at: tmp.deletingLastPathComponent()) }
+
+    let store = ConfigStore(fileURL: tmp)
+    let config = AppConfig(appearance: .dark, themeDark: "Frost", themeLight: "Paper")
+    store.save(config)
+    #expect(store.load() == config)
 }
