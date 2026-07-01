@@ -14,13 +14,28 @@ struct SidebarProject {
 
 // MARK: - Outline item model
 
+/// A top-level section grouping.
+private enum SidebarSection: Hashable {
+    case pinned
+    case projects
+
+    var title: String {
+        switch self {
+        case .pinned:   return "Pinned"
+        case .projects: return "Projects"
+        }
+    }
+}
+
 /// Identity-stable wrapper used as NSOutlineView item objects.
 ///
 /// NSOutlineView requires object identity for items, so we box a simple enum
 /// in a class.  Two `OutlineItem` instances are equal iff they wrap the same
-/// case with the same index values.
+/// case with the same values.  `project`/`tab` indices are into the full
+/// (unfiltered) projects array, so callbacks report real indices.
 private final class OutlineItem: NSObject {
     enum Kind: Hashable {
+        case header(SidebarSection)
         case project(Int)
         case tab(project: Int, tab: Int)
     }
@@ -33,18 +48,19 @@ private final class OutlineItem: NSObject {
     }
     override var hash: Int {
         var hasher = Hasher()
-        hasher.combine(kind)   // Kind is Hashable; distinguishes project vs tab without collisions
+        hasher.combine(kind)
         return hasher.finalize()
     }
 }
 
 // MARK: - SidebarView
 
-/// A two-level sidebar backed by an `NSOutlineView`.
+/// A sectioned sidebar backed by an `NSOutlineView`.
 ///
-/// Top level = projects.  A project is expandable (shows tab children) only
-/// when it has 2 or more tabs.  The view is dumb — it takes plain display data
-/// in and reports user actions out via closures.  No QuerttyCore import.
+/// Top level is a filterable list of section headers (`Pinned` / `Projects`,
+/// with counts) and project rows; a project expands to its tab children when it
+/// has 2+ tabs.  The view is dumb — it takes plain display data in and reports
+/// user actions out via closures.  No QuerttyCore import.
 @MainActor
 final class SidebarView: NSView {
 
@@ -64,9 +80,18 @@ final class SidebarView: NSView {
 
     // MARK: - Private state
 
+    /// The full (unfiltered) project list as last received, pinned-first sorted.
     private var projects: [SidebarProject] = []
     private var activeProject: Int = -1
     private var activeTab: Int = -1
+
+    /// Current filter text (case-insensitive substring on project name).
+    private var filterText: String = ""
+
+    /// The top-level rows currently displayed (headers + visible projects).
+    private var topLevel: [OutlineItem.Kind] = []
+    private var pinnedCount = 0
+    private var projectsCount = 0
 
     // Item-object cache — keyed by Kind so we reuse the same object across
     // reloads (NSOutlineView uses pointer/isEqual identity for expansion state).
@@ -74,22 +99,20 @@ final class SidebarView: NSView {
 
     // MARK: - Subviews
 
-    private let scrollView: NSScrollView
-    private let outlineView: NSOutlineView
-    private let addButton: NSButton
+    private let searchField = NSSearchField()
+    private let scrollView = NSScrollView()
+    private let outlineView = NSOutlineView()
+    private let addButton = NSButton(title: "+", target: nil, action: nil)
 
     // MARK: - Init
 
     override init(frame frameRect: NSRect) {
-        outlineView = NSOutlineView()
-        scrollView = NSScrollView()
-        addButton = NSButton(title: "+", target: nil, action: nil)
-
         super.init(frame: frameRect)
 
         wantsLayer = true
         layer?.backgroundColor = QTheme.current.bg0Color.cgColor
 
+        setupSearchField()
         setupOutlineView()
         setupAddButton()
         setupLayout()
@@ -99,6 +122,26 @@ final class SidebarView: NSView {
     required init?(coder _: NSCoder) { fatalError("not supported") }
 
     // MARK: - Setup
+
+    private func setupSearchField() {
+        searchField.placeholderString = "Filter projects…"
+        searchField.sendsSearchStringImmediately = false
+        searchField.sendsWholeSearchString = false
+        searchField.focusRingType = .none
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.delegate = self
+        styleSearchField()
+        addSubview(searchField)
+    }
+
+    private func styleSearchField() {
+        searchField.font = QTheme.monoFont(size: 12)
+        searchField.textColor = QTheme.current.fgColor
+        if let cell = searchField.cell as? NSSearchFieldCell {
+            cell.backgroundColor = QTheme.current.bg2Color
+            cell.drawsBackground = true
+        }
+    }
 
     private func setupOutlineView() {
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("ItemColumn"))
@@ -110,11 +153,11 @@ final class SidebarView: NSView {
         outlineView.selectionHighlightStyle = .regular
         outlineView.allowsEmptySelection = true
         outlineView.allowsMultipleSelection = false
-        outlineView.indentationPerLevel = 16
+        outlineView.indentationPerLevel = 14
         outlineView.indentationMarkerFollowsCell = true
+        outlineView.backgroundColor = QTheme.current.bg0Color
         outlineView.dataSource = self
         outlineView.delegate = self
-        outlineView.backgroundColor = QTheme.current.bg0Color
         outlineView.translatesAutoresizingMaskIntoConstraints = false
 
         scrollView.documentView = outlineView
@@ -140,8 +183,6 @@ final class SidebarView: NSView {
         addSubview(addButton)
     }
 
-    /// Applies theme-dependent styling to the Add-project button (re-callable
-    /// on scheme change).
     private func styleAddButton() {
         if let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add project") {
             addButton.image = plus
@@ -156,20 +197,16 @@ final class SidebarView: NSView {
         )
     }
 
-    /// Re-applies the active theme to background surfaces and the add button.
-    /// Row cells recolor when the caller reloads via `update(...)`.
-    func applyTheme() {
-        layer?.backgroundColor = QTheme.current.bg0Color.cgColor
-        outlineView.backgroundColor = QTheme.current.bg0Color
-        scrollView.backgroundColor = QTheme.current.bg0Color
-        styleAddButton()
-    }
-
     private func setupLayout() {
         NSLayoutConstraint.activate([
             widthAnchor.constraint(greaterThanOrEqualToConstant: 200),
 
-            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            searchField.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            searchField.heightAnchor.constraint(equalToConstant: 26),
+
+            scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: addButton.topAnchor, constant: -4),
@@ -181,6 +218,16 @@ final class SidebarView: NSView {
         ])
     }
 
+    // MARK: - Theme
+
+    func applyTheme() {
+        layer?.backgroundColor = QTheme.current.bg0Color.cgColor
+        outlineView.backgroundColor = QTheme.current.bg0Color
+        scrollView.backgroundColor = QTheme.current.bg0Color
+        styleSearchField()
+        styleAddButton()
+    }
+
     // MARK: - Item-object helpers
 
     private func item(for kind: OutlineItem.Kind) -> OutlineItem {
@@ -190,57 +237,75 @@ final class SidebarView: NSView {
         return obj
     }
 
-    private func projectItem(at index: Int) -> OutlineItem {
-        item(for: .project(index))
-    }
-
-    private func tabItem(project: Int, tab: Int) -> OutlineItem {
-        item(for: .tab(project: project, tab: tab))
-    }
-
     // MARK: - Update
 
-    /// True while `update()` is programmatically adjusting the outline view, so
-    /// `outlineViewSelectionDidChange` doesn't re-fire callbacks and cause loops.
+    /// True while `update()`/rebuild is programmatically adjusting the outline
+    /// view, so `outlineViewSelectionDidChange` doesn't re-fire callbacks.
     private var isUpdating = false
 
-    /// Replaces the displayed data, auto-expands the active project, and
-    /// highlights the active project/tab rows.
+    /// Replaces the displayed data, then rebuilds the sectioned outline.
     func update(projects: [SidebarProject], activeProject: Int, activeTab: Int) {
-        isUpdating = true
-        defer { isUpdating = false }
-
         self.projects = projects
         self.activeProject = activeProject
         self.activeTab = activeTab
+        rebuildOutline()
+    }
 
-        // Evict stale cache entries whose indices no longer exist.
+    /// Applies the current filter, rebuilds the section/project rows, reloads,
+    /// and restores expansion + selection for the active project.
+    private func rebuildOutline() {
+        isUpdating = true
+        defer { isUpdating = false }
+
+        // Filter (case-insensitive substring) while keeping real indices.
+        let query = filterText.trimmingCharacters(in: .whitespaces).lowercased()
+        let visible = projects.enumerated().filter { _, p in
+            query.isEmpty || p.name.lowercased().contains(query)
+        }
+        let pinned = visible.filter { $0.element.isPinned }
+        let unpinned = visible.filter { !$0.element.isPinned }
+        pinnedCount = pinned.count
+        projectsCount = unpinned.count
+
+        var rows: [OutlineItem.Kind] = []
+        if !pinned.isEmpty {
+            rows.append(.header(.pinned))
+            rows += pinned.map { .project($0.offset) }
+        }
+        if !unpinned.isEmpty {
+            rows.append(.header(.projects))
+            rows += unpinned.map { .project($0.offset) }
+        }
+        topLevel = rows
+
+        // Evict stale cache entries.
         itemCache = itemCache.filter { kind, _ in
             switch kind {
+            case .header:               return true
             case .project(let p):       return projects.indices.contains(p)
             case .tab(let p, let t):
-                return projects.indices.contains(p)
-                    && projects[p].tabTitles.indices.contains(t)
+                return projects.indices.contains(p) && projects[p].tabTitles.indices.contains(t)
             }
         }
 
         outlineView.reloadData()
 
-        // Auto-expand the active project if it is expandable.
-        if projects.indices.contains(activeProject),
+        // Auto-expand the active project if it is visible + expandable.
+        let activeVisible = topLevel.contains(.project(activeProject))
+        if activeVisible,
+           projects.indices.contains(activeProject),
            projects[activeProject].tabTitles.count >= 2 {
-            outlineView.expandItem(projectItem(at: activeProject))
+            outlineView.expandItem(item(for: .project(activeProject)))
         }
 
-        // Select the active tab child row (or the project row for single-tab projects).
+        // Select the active tab child (or the project row), if visible.
         let rowToSelect: Int
-        if projects.indices.contains(activeProject),
+        if activeVisible,
+           projects.indices.contains(activeProject),
            projects[activeProject].tabTitles.count >= 2 {
-            let tabObj = tabItem(project: activeProject, tab: activeTab)
-            rowToSelect = outlineView.row(forItem: tabObj)
-        } else if projects.indices.contains(activeProject) {
-            let projObj = projectItem(at: activeProject)
-            rowToSelect = outlineView.row(forItem: projObj)
+            rowToSelect = outlineView.row(forItem: item(for: .tab(project: activeProject, tab: activeTab)))
+        } else if activeVisible {
+            rowToSelect = outlineView.row(forItem: item(for: .project(activeProject)))
         } else {
             rowToSelect = -1
         }
@@ -266,15 +331,22 @@ final class SidebarView: NSView {
     }
 }
 
+// MARK: - NSSearchFieldDelegate
+
+extension SidebarView: NSSearchFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard obj.object as? NSSearchField === searchField else { return }
+        filterText = searchField.stringValue
+        rebuildOutline()
+    }
+}
+
 // MARK: - NSOutlineViewDataSource
 
 extension SidebarView: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        if item == nil {
-            // Root level: number of projects.
-            return projects.count
-        }
+        if item == nil { return topLevel.count }
         guard let obj = item as? OutlineItem,
               case .project(let p) = obj.kind,
               projects.indices.contains(p) else { return 0 }
@@ -284,13 +356,13 @@ extension SidebarView: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if item == nil {
-            return projectItem(at: index)
+            return self.item(for: topLevel[index])
         }
         guard let obj = item as? OutlineItem,
               case .project(let p) = obj.kind else {
-            return projectItem(at: 0)   // fallback (should never happen)
+            return self.item(for: topLevel[0])   // fallback (should never happen)
         }
-        return tabItem(project: p, tab: index)
+        return self.item(for: .tab(project: p, tab: index))
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
@@ -311,6 +383,19 @@ extension SidebarView: NSOutlineViewDelegate {
         guard let obj = item as? OutlineItem else { return nil }
 
         switch obj.kind {
+        case .header(let section):
+            let identifier = NSUserInterfaceItemIdentifier("HeaderCell")
+            let cellView: HeaderCellView
+            if let recycled = outlineView.makeView(withIdentifier: identifier, owner: nil) as? HeaderCellView {
+                cellView = recycled
+            } else {
+                cellView = HeaderCellView()
+                cellView.identifier = identifier
+            }
+            cellView.configure(title: section.title,
+                               count: section == .pinned ? pinnedCount : projectsCount)
+            return cellView
+
         case .project(let p):
             guard projects.indices.contains(p) else { return nil }
             let project = projects[p]
@@ -350,8 +435,13 @@ extension SidebarView: NSOutlineViewDelegate {
         }
     }
 
-    /// Draw selection with a themed row view instead of the OS's system accent
-    /// highlight (which clashes with quertty's accent).
+    /// Section headers are labels, not selectable rows.
+    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
+        guard let obj = item as? OutlineItem else { return false }
+        if case .header = obj.kind { return false }
+        return true
+    }
+
     func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
         let identifier = NSUserInterfaceItemIdentifier("SidebarRow")
         if let recycled = outlineView.makeView(withIdentifier: identifier, owner: nil) as? SidebarRowView {
@@ -369,11 +459,61 @@ extension SidebarView: NSOutlineViewDelegate {
               let obj = outlineView.item(atRow: row) as? OutlineItem else { return }
 
         switch obj.kind {
+        case .header:
+            break
         case .project(let p):
             onSelectProject?(p)
         case .tab(let p, let t):
             onSelectTab?(p, t)
         }
+    }
+}
+
+// MARK: - HeaderCellView
+
+/// A section header row: uppercase title on the left, count on the right.
+private final class HeaderCellView: NSTableCellView {
+
+    private let titleLabel = NSTextField(labelWithString: "")
+    private let countLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+
+        titleLabel.font = QTheme.monoFont(size: 10.5, weight: .bold)
+        titleLabel.textColor = QTheme.current.fg3Color
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+
+        countLabel.font = QTheme.monoFont(size: 10.5)
+        countLabel.textColor = QTheme.current.fg3Color
+        countLabel.alignment = .right
+        countLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(countLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+            countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            countLabel.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -3),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder _: NSCoder) { fatalError("not supported") }
+
+    func configure(title: String, count: Int) {
+        // Uppercase with light letter-spacing (handoff section headers).
+        titleLabel.attributedStringValue = NSAttributedString(
+            string: title.uppercased(),
+            attributes: [
+                .font: QTheme.monoFont(size: 10.5, weight: .bold),
+                .foregroundColor: QTheme.current.fg3Color,
+                .kern: 1.2,
+            ]
+        )
+        countLabel.stringValue = "\(count)"
+        countLabel.textColor = QTheme.current.fg3Color
     }
 }
 
@@ -448,9 +588,9 @@ private final class ProjectCellView: NSTableCellView {
     func configure(name: String, isPinned: Bool, projectIndex: Int,
                    target: AnyObject, action: Selector) {
         nameLabel.stringValue = name
+        nameLabel.textColor = QTheme.current.fgColor
 
-        // Pinned rows use a filled accent star (matching the handoff); unpinned
-        // rows show a dim hollow star affordance.
+        // Pinned rows use a filled accent star; unpinned rows show a dim hollow star.
         let symbolName = isPinned ? "star.fill" : "star"
         if let image = NSImage(systemSymbolName: symbolName,
                                accessibilityDescription: isPinned ? "Pinned" : "Pin") {
@@ -498,5 +638,6 @@ private final class TabCellView: NSTableCellView {
 
     func configure(title: String) {
         titleLabel.stringValue = title
+        titleLabel.textColor = QTheme.current.fg2Color
     }
 }
