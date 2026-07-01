@@ -467,10 +467,13 @@ final class TerminalViewController: NSViewController {
 
         rootContentView?.removeFromSuperview()
 
+        let showsClose = paneTree.layout.surfaces.count > 1
         let newRoot = SurfaceNodeView(
             node: paneTree.layout.root,
             registry: registry,
-            focusedSurfaceID: paneTree.focusedSurfaceID
+            focusedSurfaceID: paneTree.focusedSurfaceID,
+            showsClose: showsClose,
+            onClose: { [weak self] id in self?.closePane(surfaceID: id) }
         )
         newRoot.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(newRoot)

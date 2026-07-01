@@ -34,11 +34,19 @@ final class SurfaceNodeView: NSView {
     init(
         node: SurfaceNode,
         registry: SurfaceRegistry,
-        focusedSurfaceID: UUID?
+        focusedSurfaceID: UUID?,
+        showsClose: Bool = false,
+        onClose: ((UUID) -> Void)? = nil
     ) {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        buildContent(node: node, registry: registry, focusedSurfaceID: focusedSurfaceID)
+        buildContent(
+            node: node,
+            registry: registry,
+            focusedSurfaceID: focusedSurfaceID,
+            showsClose: showsClose,
+            onClose: onClose
+        )
     }
 
     @available(*, unavailable)
@@ -65,7 +73,9 @@ final class SurfaceNodeView: NSView {
     private func buildContent(
         node: SurfaceNode,
         registry: SurfaceRegistry,
-        focusedSurfaceID: UUID?
+        focusedSurfaceID: UUID?,
+        showsClose: Bool,
+        onClose: ((UUID) -> Void)?
     ) {
         switch node {
 
@@ -74,7 +84,9 @@ final class SurfaceNodeView: NSView {
             let container = LeafContainerView(
                 surfaceID: surface.id,
                 terminalView: terminalView,
-                isFocused: surface.id == focusedSurfaceID
+                isFocused: surface.id == focusedSurfaceID,
+                showsClose: showsClose,
+                onClose: onClose
             )
             container.translatesAutoresizingMaskIntoConstraints = false
             addSubview(container)
@@ -92,7 +104,9 @@ final class SurfaceNodeView: NSView {
                 first: first,
                 second: second,
                 registry: registry,
-                focusedSurfaceID: focusedSurfaceID
+                focusedSurfaceID: focusedSurfaceID,
+                showsClose: showsClose,
+                onClose: onClose
             )
             splitView.translatesAutoresizingMaskIntoConstraints = false
             addSubview(splitView)
@@ -110,6 +124,9 @@ final class SurfaceNodeView: NSView {
 
 /// A thin wrapper view that embeds a `TerminalView` and optionally draws a
 /// 2-pt accent-coloured focus ring around the pane.
+///
+/// When `showsClose` is true a small × button is floated in the top-right
+/// corner; clicking it invokes `onClose` with this pane's `surfaceID`.
 @MainActor
 private final class LeafContainerView: NSView {
 
@@ -117,10 +134,19 @@ private final class LeafContainerView: NSView {
 
     let surfaceID: UUID
     private var isFocused: Bool
+    private var onClose: ((UUID) -> Void)?
+    private var closeButton: NSButton?
 
-    init(surfaceID: UUID, terminalView: NSView, isFocused: Bool) {
+    init(
+        surfaceID: UUID,
+        terminalView: NSView,
+        isFocused: Bool,
+        showsClose: Bool,
+        onClose: ((UUID) -> Void)?
+    ) {
         self.surfaceID = surfaceID
         self.isFocused = isFocused
+        self.onClose = onClose
         super.init(frame: .zero)
         wantsLayer = true
 
@@ -133,6 +159,10 @@ private final class LeafContainerView: NSView {
             terminalView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset),
             terminalView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -inset),
         ])
+
+        if showsClose {
+            addCloseButton()
+        }
 
         updateBorder()
     }
@@ -156,6 +186,38 @@ private final class LeafContainerView: NSView {
             layer?.borderWidth = 0.5
         }
     }
+
+    private func addCloseButton() {
+        let button = NSButton(frame: .zero)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.bezelStyle = .circular
+        button.isBordered = false
+        button.title = ""
+        if let image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close pane") {
+            button.image = image
+        } else {
+            button.title = "×"
+        }
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = NSColor.secondaryLabelColor
+        button.toolTip = "Close pane"
+        button.target = self
+        button.action = #selector(closeButtonTapped)
+
+        addSubview(button)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 18),
+            button.heightAnchor.constraint(equalToConstant: 18),
+            button.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            button.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
+        ])
+
+        closeButton = button
+    }
+
+    @objc private func closeButtonTapped() {
+        onClose?(surfaceID)
+    }
 }
 
 // MARK: - RatioSplitView
@@ -178,7 +240,9 @@ private final class RatioSplitView: NSSplitView {
         first: SurfaceNode,
         second: SurfaceNode,
         registry: SurfaceRegistry,
-        focusedSurfaceID: UUID?
+        focusedSurfaceID: UUID?,
+        showsClose: Bool = false,
+        onClose: ((UUID) -> Void)? = nil
     ) {
         self.ratio = ratio
         super.init(frame: .zero)
@@ -188,12 +252,16 @@ private final class RatioSplitView: NSSplitView {
         let firstView = SurfaceNodeView(
             node: first,
             registry: registry,
-            focusedSurfaceID: focusedSurfaceID
+            focusedSurfaceID: focusedSurfaceID,
+            showsClose: showsClose,
+            onClose: onClose
         )
         let secondView = SurfaceNodeView(
             node: second,
             registry: registry,
-            focusedSurfaceID: focusedSurfaceID
+            focusedSurfaceID: focusedSurfaceID,
+            showsClose: showsClose,
+            onClose: onClose
         )
         addArrangedSubview(firstView)
         addArrangedSubview(secondView)

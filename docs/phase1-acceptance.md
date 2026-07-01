@@ -293,6 +293,40 @@ Result: **Build Succeeded** (confirmed by automated build step).
 
 ---
 
+## Per-pane close (×) button for split panes
+
+### What was implemented
+
+- `App/Sources/App/SurfaceNodeView.swift` — `SurfaceNodeView.init` gains `showsClose: Bool` and `onClose: ((UUID) -> Void)?` params (defaulting to `false`/`nil`). `buildContent` threads them into `LeafContainerView` and `RatioSplitView`. `RatioSplitView.init` gains the same two params and passes them down to each child `SurfaceNodeView`. `LeafContainerView.init` gains `showsClose` and `onClose`: when `showsClose` is `true` an 18×18 `NSButton` (SF Symbol `xmark`, circular, borderless, `secondaryLabelColor` tint) is pinned 4 pt from the top-right corner above the terminal view via Auto Layout. Clicking it calls `onClose?(surfaceID)`. When `showsClose` is `false`, no button is created.
+- `App/Sources/App/PaneActions.swift` — added `func closePane(surfaceID: UUID)` which focuses the given surface, calls `paneTree.closeFocused()`, then `rebuildSurfaceNodeView()` and restores first responder to the newly focused terminal.
+- `App/Sources/App/TerminalViewController.swift` — `rebuildSurfaceNodeView()` passes `showsClose: paneTree.layout.surfaces.count > 1` and `onClose: { [weak self] id in self?.closePane(surfaceID: id) }` to the root `SurfaceNodeView`. The `@objc closePane(_:)` (⌘W) method is unchanged.
+
+### Manual check (PENDING USER VERIFICATION)
+
+Run the app:
+```bash
+open ~/Library/Developer/Xcode/DerivedData/quertty-giuacqmlsqkgkrdadhyyjabydjxb/Build/Products/Debug/quertty.app
+```
+
+1. **Single pane — no × button**: A tab with only one pane should show no × button anywhere.
+2. **After splitting — × appears on each pane**: Press ⌘D to split vertically. Each pane should show a small × button in its top-right corner.
+3. **× closes that specific pane**: Click the × on the left pane — the left pane closes and the right pane expands to fill the space, retaining its session. Click × on either pane in a split — the sibling pane fills the full area and its session is intact.
+4. **After close — button disappears**: Once back to a single pane, the × button is gone.
+5. **Focus is preserved after close**: After closing a pane via ×, the remaining pane should be focused (accent border) and accept keyboard input.
+6. **⌘W still works**: Close via the menu / keyboard shortcut behaves identically to before.
+
+**Status: PENDING USER VERIFICATION**
+
+### Build verification (headless)
+
+```bash
+mise exec -- tuist generate --no-open && tuist build quertty
+```
+
+Result: **Build Succeeded** (confirmed by automated build step).
+
+---
+
 ## Task 8: Custom tab bar with per-tab × close button
 
 ### What was implemented

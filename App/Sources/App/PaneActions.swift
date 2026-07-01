@@ -39,6 +39,17 @@ extension TerminalViewController {
         rebuildAndFocus()
     }
 
+    /// Close the pane identified by `surfaceID` (called by the per-pane × button).
+    func closePane(surfaceID: UUID) {
+        paneTree.focus(surfaceID)
+        let closed = paneTree.closeFocused()
+        guard closed else { return }
+        rebuildSurfaceNodeView()
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
     // MARK: - Helpers
 
     /// Rebuild the split-view hierarchy, prune stale registry entries, and
