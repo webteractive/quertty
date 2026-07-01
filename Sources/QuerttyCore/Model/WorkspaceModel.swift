@@ -34,6 +34,7 @@ public final class WorkspaceModel {
         guard !restored.isEmpty else { return nil }
         projects = restored
         self.activeIndex = min(max(activeIndex, 0), restored.count - 1)
+        resort()
     }
 
     public var activeProject: ProjectRuntime { projects[activeIndex] }
@@ -44,6 +45,7 @@ public final class WorkspaceModel {
         let p = ProjectRuntime(name: name, rootPath: rootPath)
         projects.append(p)
         activeIndex = projects.count - 1
+        resort()   // insert into sorted position; active stays on `p`
         return p
     }
 
@@ -65,5 +67,19 @@ public final class WorkspaceModel {
     public func togglePin(at index: Int) {
         guard projects.indices.contains(index) else { return }
         projects[index].isPinned.toggle()
+        resort()   // pinning moves the project into the pinned group
+    }
+
+    /// Sort order: pinned projects first, then unpinned, each group ordered by
+    /// name (case-insensitive). The active project is preserved by identity so
+    /// `activeIndex` keeps pointing at the same project after reordering.
+    private func resort() {
+        guard !projects.isEmpty else { return }
+        let activeID = projects[activeIndex].id
+        projects.sort { a, b in
+            if a.isPinned != b.isPinned { return a.isPinned }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+        activeIndex = projects.firstIndex { $0.id == activeID } ?? 0
     }
 }

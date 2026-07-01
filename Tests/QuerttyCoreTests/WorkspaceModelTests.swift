@@ -25,11 +25,56 @@ import Testing
 }
 
 @Test func removingProjectBeforeActiveStepsBack() {
-    let ws = WorkspaceModel()
-    _ = ws.addProject(name: "b", rootPath: "/b")
-    _ = ws.addProject(name: "c", rootPath: "/c")   // 3 projects, active = 2
-    ws.removeProject(at: 0)
+    // Sorted order is [a, b, c]; active = c at index 2.
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "a", rootPath: "/a"),
+        ProjectRuntime(name: "b", rootPath: "/b"),
+        ProjectRuntime(name: "c", rootPath: "/c"),
+    ], activeIndex: 2)!
+    ws.removeProject(at: 0)                         // remove "a" (before active)
     #expect(ws.projects.count == 2)
+    #expect(ws.activeIndex == 1)                    // c slid from 2 → 1
+}
+
+@Test func projectsSortByNameCaseInsensitive() {
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "Zeta", rootPath: "/z"),
+        ProjectRuntime(name: "alpha", rootPath: "/a"),
+        ProjectRuntime(name: "Beta", rootPath: "/b"),
+    ], activeIndex: 0)!
+    #expect(ws.projects.map(\.name) == ["alpha", "Beta", "Zeta"])
+}
+
+@Test func pinnedProjectsSortAboveUnpinnedEachByName() {
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "delta", rootPath: "/d"),
+        ProjectRuntime(name: "alpha", rootPath: "/a", isPinned: true),
+        ProjectRuntime(name: "charlie", rootPath: "/c"),
+        ProjectRuntime(name: "bravo", rootPath: "/b", isPinned: true),
+    ], activeIndex: 0)!
+    #expect(ws.projects.map(\.name) == ["alpha", "bravo", "charlie", "delta"])
+    #expect(ws.projects.map(\.isPinned) == [true, true, false, false])
+}
+
+@Test func togglePinMovesProjectAboveUnpinnedAndKeepsActive() {
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "alpha", rootPath: "/a"),
+        ProjectRuntime(name: "zeta", rootPath: "/z"),
+    ], activeIndex: 1)!                             // active = zeta
+    let zetaIdx = ws.projects.firstIndex { $0.name == "zeta" }!
+    ws.togglePin(at: zetaIdx)                        // pin zeta → jumps above alpha
+    #expect(ws.projects.map(\.name) == ["zeta", "alpha"])
+    #expect(ws.activeProject.name == "zeta")         // active preserved by identity
+}
+
+@Test func addProjectInsertsInSortedPositionAndStaysActive() {
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "alpha", rootPath: "/a"),
+        ProjectRuntime(name: "zeta", rootPath: "/z"),
+    ], activeIndex: 0)!
+    let m = ws.addProject(name: "mike", rootPath: "/m")
+    #expect(ws.projects.map(\.name) == ["alpha", "mike", "zeta"])
+    #expect(ws.activeProject.id == m.id)             // active follows the new project
     #expect(ws.activeIndex == 1)
 }
 
