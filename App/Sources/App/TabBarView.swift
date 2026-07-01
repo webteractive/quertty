@@ -137,6 +137,10 @@ final class TabBarView: NSView {
         guard tabItems.indices.contains(index) else { return }
         let item = tabItems[index]
 
+        // Force a layout pass so labelFrame is current before we read it.
+        item.layoutSubtreeIfNeeded()
+        layoutSubtreeIfNeeded()
+
         // Convert the item's label frame to self's coordinate space.
         let labelFrameInItem = item.labelFrame
         let labelFrameInSelf = convert(labelFrameInItem, from: item)
@@ -302,9 +306,6 @@ private final class TabItemView: NSView {
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
         }
-        // Subtle right-edge separator between tabs.
-        layer?.borderColor = NSColor.separatorColor.cgColor
-        layer?.borderWidth = 0
     }
 
     // MARK: Mouse interaction
