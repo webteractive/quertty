@@ -1,0 +1,49 @@
+import Foundation
+
+/// Reads (and, on first launch, seeds) quertty's config file.
+///
+/// Location, ghostty-style: `$XDG_CONFIG_HOME/quertty/config` when
+/// `XDG_CONFIG_HOME` is set, otherwise `~/.config/quertty/config`.
+public struct ConfigStore {
+
+    public let fileURL: URL
+
+    /// - Parameter fileURL: Override the resolved path (used by tests). When
+    ///   `nil`, the standard XDG / `~/.config` location is used.
+    public init(fileURL: URL? = nil) {
+        if let fileURL {
+            self.fileURL = fileURL
+            return
+        }
+        let base: URL
+        if let xdg = ProcessInfo.processInfo.environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            base = URL(fileURLWithPath: xdg, isDirectory: true)
+        } else {
+            base = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+                .appendingPathComponent(".config", isDirectory: true)
+        }
+        self.fileURL = base
+            .appendingPathComponent("quertty", isDirectory: true)
+            .appendingPathComponent("config")
+    }
+
+    /// Loads the config. If the file is missing, writes the documented default
+    /// (best-effort) and returns `AppConfig()` defaults. A present-but-unreadable
+    /// file also falls back to defaults without throwing.
+    public func load() -> AppConfig {
+        if let text = try? String(contentsOf: fileURL, encoding: .utf8) {
+            return AppConfig.parse(text)
+        }
+        writeDefaultIfMissing()
+        return AppConfig()
+    }
+
+    /// Writes the starter config only when no file exists yet. Errors (sandbox,
+    /// read-only home) are swallowed — a missing config simply means defaults.
+    public func writeDefaultIfMissing() {
+        guard !FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        let dir = fileURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? AppConfig.defaultFileContents.write(to: fileURL, atomically: true, encoding: .utf8)
+    }
+}
