@@ -84,6 +84,37 @@ in `QuerttyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves + applies
   re-applies theme + terminal overrides to every live pane. Runtime scheme /
   appearance switches persist back to the file (`AppConfig.rendered()`).
 
+## AI agent detection
+
+quertty surfaces running AI agents as **status dots** in the sidebar (per-tab
+dots + a per-project roll-up on the diamond): **green = running, yellow =
+needs-attention, dim = idle**. The engine is pure/tested in `QuerttyCore`
+(`AgentRegistry`, `AgentStateMachine`, `AgentDetector`, `AgentEvent`).
+
+Detection is **hook-driven** — libghostty exposes no PTY fd / child PID, so
+harness hooks *ping* quertty:
+
+1. **Settings (⌘,) → Agent Status Hooks** — a toggle per harness installs a
+   shared hook helper (`~/.quertty/hooks/quertty-hook.py`) and registers it in the
+   harness config (toggle off to uninstall).
+2. On a lifecycle event the harness runs the helper, which appends
+   `{cwd, agent, event}` to `~/.quertty/agent-events.jsonl`.
+3. `AgentEventWatcher` tails that file; `TerminalViewController` correlates each
+   event to panes **by working directory** and drives the dots.
+
+Per-harness install (`HookInstaller` + the pure `*HookConfig` transforms):
+- **Claude** — additive hooks in `~/.claude/settings.json` (UserPromptSubmit→running,
+  Notification→needsAttention, Stop→idle, SessionEnd→ended).
+- **Codex** — chains the single `~/.codex/config.toml` `notify` (emits then execs
+  your original; uninstall restores it). Only turn-ended fires → idle/presence.
+- **Hermes** — `hooks:` block in `~/.hermes/config.yaml` (pre_approval_request→
+  needsAttention, pre_llm_call→running, post_llm_call→idle, session start/end). If
+  a `hooks:` block already exists, install shows a snippet to merge by hand.
+
+Notes: restart the agent after installing; correlation is by `cwd`, so two panes
+in the same directory both light up (exact per-pane routing needs a per-surface
+id libghostty doesn't expose).
+
 ## Conventions
 
 - Follow existing file patterns; keep files focused. `QuerttyCore` stays pure

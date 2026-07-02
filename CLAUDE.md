@@ -69,6 +69,16 @@ in `QuerttyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
   + terminal overrides to every live pane; runtime scheme/appearance changes are
   persisted back to the file.
 
+## AI agent detection
+
+Running agents show as sidebar status dots (green=running, yellow=needs-attention,
+dim=idle). It's **hook-driven** (libghostty exposes no PTY/pid): **Settings (⌘,) → Agent
+Status Hooks** toggles a hook helper (`~/.quertty/hooks/quertty-hook.py`) into each harness
+(Claude `settings.json` · Codex chained `notify` · Hermes `config.yaml`), which
+appends `{cwd,agent,event}` to `~/.quertty/agent-events.jsonl`; quertty tails that
+and correlates to panes by `cwd`. Engine is pure/tested in `QuerttyCore`. Full
+details in [`AGENTS.md`](AGENTS.md).
+
 ## Guardrails
 
 - Keep `QuerttyCore` pure (no AppKit). Don't commit debug `NSLog`/`print`.
