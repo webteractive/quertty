@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Watches the config file for external edits (auto-reload).
     private var configWatcher: ConfigFileWatcher?
 
+    /// Installs/removes agent hooks in each harness's config.
+    private let hookInstaller = HookInstaller()
+
     /// The persistent workspace store backed by `~/Library/Application Support/quertty/`.
     private lazy var workspaceStore: WorkspaceStore = {
         let appSupport = FileManager.default.urls(
@@ -54,6 +57,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // TerminalController internally calls ghostty_init(0, nil) exactly once
         // via its own initializeRuntimeIfNeeded() guard, so we do not call
         // Ghostty.initializeRuntime() here to avoid a double-init.
+
+        // Mark quertty-hosted shells so agent hooks only report sessions running
+        // inside quertty (must be set before any pane spawns its shell). Also
+        // refresh the installed hook script so the guard reaches existing hooks.
+        setenv("QUERTTY", "1", 1)
+        hookInstaller.refreshInstalledScriptIfPresent()
 
         // Load config and resolve the active scheme BEFORE the view controller
         // is created (it reads QTheme.current in viewDidLoad).
@@ -231,6 +240,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminalViewController?.reloadGhosttyConfiguration(makeTerminalConfiguration())  // terminal overrides
     }
 
+    // MARK: - Settings
+
+    private var settingsWindowController: SettingsWindowController?
+
+    @objc private func openSettings(_ sender: Any?) {
+        let controller = settingsWindowController ?? SettingsWindowController(installer: hookInstaller)
+        settingsWindowController = controller
+        controller.refresh()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     @objc func cycleAppearance(_ sender: Any?) { cycleAppearanceMode() }
 
     /// Cycles the appearance axis System → Dark → Light → System.
@@ -322,6 +344,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(appMenuItem)
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
+        let settingsItem = NSMenuItem(
+            title: "Settings\u{2026}",
+            action: #selector(openSettings(_:)),
+            keyEquivalent: ","
+        )
+        settingsItem.keyEquivalentModifierMask = [.command]
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+
         let reloadConfig = NSMenuItem(
             title: "Reload Configuration",
             action: #selector(reloadConfiguration(_:)),

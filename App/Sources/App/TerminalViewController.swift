@@ -557,8 +557,10 @@ final class TerminalViewController: NSViewController {
             let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) }
             let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
                 ?? focusedSurface?.workingDir
+            let agentName = focusedSurface.flatMap { agentDetector.state(for: $0.id).kind?.displayName }
             return TabTitle.display(
                 manualTitle: tree.manualTitle,
+                agentName: agentName,
                 focusedSurfaceTitle: surfaceTitle,
                 workingDir: workingDir,
                 index: idx
@@ -589,8 +591,10 @@ final class TerminalViewController: NSViewController {
                     let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) }
                     let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
                         ?? focusedSurface?.workingDir
+                    let agentName = focusedSurface.flatMap { agentDetector.state(for: $0.id).kind?.displayName }
                     return TabTitle.display(
                         manualTitle: tree.manualTitle,
+                        agentName: agentName,
                         focusedSurfaceTitle: surfaceTitle,
                         workingDir: workingDir,
                         index: idx
