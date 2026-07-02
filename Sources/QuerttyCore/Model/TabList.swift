@@ -98,6 +98,16 @@ public final class TabList {
         "Tab \(index + 1)"
     }
 
+    /// Mutate the leaf surface with `id` in whichever tree holds it (e.g. its
+    /// persisted title). Returns false if no tab contains that surface.
+    @discardableResult
+    public func updateSurface(_ id: UUID, _ mutate: (inout Surface) -> Void) -> Bool {
+        for index in trees.indices {
+            if trees[index].layout.update(surfaceID: id, mutate) { return true }
+        }
+        return false
+    }
+
     private static func freshTree(workingDir: String) -> PaneTree {
         let surface = Surface(workingDir: workingDir)
         return PaneTree(layout: Layout(root: .leaf(surface)), focusedSurfaceID: surface.id)

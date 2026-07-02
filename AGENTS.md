@@ -83,6 +83,15 @@ in `QuerttyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves + applies
 - **Reload:** ⇧⌘, (also App menu + command palette) re-reads config and
   re-applies theme + terminal overrides to every live pane. Runtime scheme /
   appearance switches persist back to the file (`AppConfig.rendered()`).
+- **`preserve-sessions = true|false`** (default false) — panes run inside
+  [zmx](https://zmx.sh) sessions (`zmx attach quertty-<uuid8>`, one per pane) so
+  they survive app quit/relaunch; reattach replays terminal state. Quit
+  survives, explicit close kills (via `registry.prune` → `zmx kill`). The
+  Settings (⌘,) toggle offers to download the zmx release binary from zmx.sh
+  into `~/.quertty/bin` when missing (Homebrew/manual installs are detected
+  too); config-only enablement without zmx falls back to plain shells with a
+  one-time alert. Settings also shows/kills orphaned `quertty-*` sessions. Pure logic in
+  `QuerttyCore` (`SessionPersistence`); process IO in `ZmxRunner`.
 
 ## AI agent detection
 

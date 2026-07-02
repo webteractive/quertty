@@ -68,6 +68,9 @@ in `QuerttyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
 - **Reload:** ⇧⌘, (also App menu + palette) re-reads config and re-applies theme
   + terminal overrides to every live pane; runtime scheme/appearance changes are
   persisted back to the file.
+- **`preserve-sessions`** (default false) — panes run inside zmx sessions that
+  survive quit/relaunch (quit survives, close kills). Settings toggle can
+  install zmx; details in [`AGENTS.md`](AGENTS.md).
 
 ## AI agent detection
 

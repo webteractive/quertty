@@ -4,7 +4,9 @@ import Foundation
 ///
 /// Precedence:
 /// 1. Non-empty, trimmed `manualTitle` (the user's own name)
-/// 2. Non-empty `agentName` — a detected AI agent running in the pane
+/// 2. Non-empty `agentName` — the AI agent running in the pane, combined with
+///    the title the CLI emits when there is one: `"claude code: <emitted>"`,
+///    or the agent name alone otherwise
 /// 3. `focusedSurfaceTitle` **when it names a running command** — the terminal's
 ///    reported foreground process, ignoring bare shell names (an idle shell
 ///    shouldn't hijack the tab title)
@@ -29,8 +31,12 @@ public enum TabTitle {
             return title
         }
 
-        // 2. Detected agent names the tab.
+        // 2. Detected agent names the tab, carrying the CLI's own title along.
         if let agent = agentName?.trimmingCharacters(in: .whitespaces), !agent.isEmpty {
+            if let title = focusedSurfaceTitle?.trimmingCharacters(in: .whitespaces),
+               !title.isEmpty, !isShellName(title) {
+                return "\(agent): \(title)"
+            }
             return agent
         }
 

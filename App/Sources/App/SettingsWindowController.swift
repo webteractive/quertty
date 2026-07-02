@@ -9,15 +9,36 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private var switches: [(harness: Harness, control: NSSwitch)] = []
     private let configURL = ConfigStore().fileURL
 
+    /// Every live surface ID (for orphaned-session diffing).
+    private let liveSurfaceIDs: () -> [UUID]
+
     /// Detected text-capable apps backing the editor dropdown (parallel to its
     /// items after the leading "System Default").
     private let editorPopup = NSPopUpButton()
     private var editorApps: [URL] = []
 
-    init(installer: HookInstaller) {
+    // Sessions section controls.
+    private let preserveSwitch = NSSwitch()
+    private let sessionStatusLabel = NSTextField(labelWithString: "")
+    private let orphanButton = NSButton(title: "", target: nil, action: nil)
+    private var orphanSessions: [String] = []
+
+    // Appearance section controls.
+    private let appearancePopup = NSPopUpButton()
+    private let darkThemePopup = NSPopUpButton()
+    private let lightThemePopup = NSPopUpButton()
+
+    /// Called when the user picks an appearance mode (owner applies + persists).
+    var onSetAppearance: ((AppearanceMode) -> Void)?
+
+    /// Called when the user picks a color scheme (owner applies + persists).
+    var onSelectTheme: ((QColorScheme) -> Void)?
+
+    init(installer: HookInstaller, liveSurfaceIDs: @escaping () -> [UUID] = { [] }) {
         self.installer = installer
+        self.liveSurfaceIDs = liveSurfaceIDs
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 300),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -42,6 +63,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             control.state = installer.isInstalled(harness) ? .on : .off
         }
         if editorPopup.numberOfItems > 0 { populateEditorPopup() }
+        refreshAppearance()
+        refreshSessions()
     }
 
     // MARK: - Content
@@ -67,6 +90,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         // Configuration section.
         stack.addArrangedSubview(sectionHeader("Configuration"))
         stack.addArrangedSubview(caption(abbreviatedConfigPath()))
+        stack.addArrangedSubview(caption(
+            "appearance, theme-dark, theme-light and preserve-sessions are quertty's own keys; "
+            + "every other key = value is forwarded verbatim to the terminal, so an existing "
+            + "ghostty config can be pasted straight in. Reload anytime with ⇧⌘,."
+        ))
 
         // Editor row: a dropdown of detected text editors + the open button.
         editorPopup.target = self
@@ -80,6 +108,70 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         editorRow.spacing = 8
         stack.addArrangedSubview(editorRow)
         populateEditorPopup()
+
+        // Appearance section.
+        stack.addArrangedSubview(spacer())
+        stack.addArrangedSubview(sectionHeader("Appearance"))
+        appearancePopup.removeAllItems()
+        appearancePopup.addItems(withTitles: AppearanceMode.allCases.map { $0.rawValue.capitalized })
+        appearancePopup.target = self
+        appearancePopup.action = #selector(appearancePicked(_:))
+        darkThemePopup.removeAllItems()
+        darkThemePopup.addItems(withTitles: QColorScheme.darkSchemes.map(\.displayName))
+        darkThemePopup.target = self
+        darkThemePopup.action = #selector(darkThemePicked(_:))
+        lightThemePopup.removeAllItems()
+        lightThemePopup.addItems(withTitles: QColorScheme.lightSchemes.map(\.displayName))
+        lightThemePopup.target = self
+        lightThemePopup.action = #selector(lightThemePicked(_:))
+        for (title, popup) in [
+            ("Appearance", appearancePopup),
+            ("Dark theme", darkThemePopup),
+            ("Light theme", lightThemePopup),
+        ] {
+            let row = popupRow(title, popup: popup)
+            stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+
+        // Sessions section.
+        stack.addArrangedSubview(spacer())
+        stack.addArrangedSubview(sectionHeader("Sessions"))
+        stack.addArrangedSubview(caption(
+            "Keep terminal sessions running when quertty quits, and reattach them on relaunch. Powered by zmx.",
+            link: "zmx", url: "https://github.com/neurosnap/zmx"
+        ))
+
+        let preserveRow = NSView()
+        preserveRow.translatesAutoresizingMaskIntoConstraints = false
+        let preserveLabel = NSTextField(labelWithString: "Preserve sessions")
+        preserveLabel.font = QTheme.monoFont(size: 13, weight: .medium)
+        preserveLabel.textColor = QTheme.current.fgColor
+        preserveLabel.translatesAutoresizingMaskIntoConstraints = false
+        preserveSwitch.target = self
+        preserveSwitch.action = #selector(preserveToggled(_:))
+        preserveSwitch.translatesAutoresizingMaskIntoConstraints = false
+        preserveRow.addSubview(preserveLabel)
+        preserveRow.addSubview(preserveSwitch)
+        NSLayoutConstraint.activate([
+            preserveRow.heightAnchor.constraint(equalToConstant: 28),
+            preserveLabel.leadingAnchor.constraint(equalTo: preserveRow.leadingAnchor),
+            preserveLabel.centerYAnchor.constraint(equalTo: preserveRow.centerYAnchor),
+            preserveSwitch.trailingAnchor.constraint(equalTo: preserveRow.trailingAnchor),
+            preserveSwitch.centerYAnchor.constraint(equalTo: preserveRow.centerYAnchor),
+        ])
+        stack.addArrangedSubview(preserveRow)
+        preserveRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+
+        sessionStatusLabel.font = QTheme.monoFont(size: 11)
+        sessionStatusLabel.textColor = QTheme.current.fg3Color
+        stack.addArrangedSubview(sessionStatusLabel)
+
+        orphanButton.bezelStyle = .rounded
+        orphanButton.target = self
+        orphanButton.action = #selector(killOrphans(_:))
+        orphanButton.isHidden = true
+        stack.addArrangedSubview(orphanButton)
 
         stack.addArrangedSubview(spacer())
         stack.addArrangedSubview(sectionHeader("Agent Status Hooks"))
@@ -98,6 +190,78 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.addArrangedSubview(caption("Restart the agent after enabling for the hook to take effect."))
         refresh()
         return root
+    }
+
+    /// A justified label + popup row (same anatomy as the switch rows).
+    private func popupRow(_ title: String, popup: NSPopUpButton) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = QTheme.monoFont(size: 13, weight: .medium)
+        label.textColor = QTheme.current.fgColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        popup.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = NSView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(label)
+        row.addSubview(popup)
+        NSLayoutConstraint.activate([
+            row.heightAnchor.constraint(equalToConstant: 28),
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            popup.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            popup.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            popup.widthAnchor.constraint(greaterThanOrEqualToConstant: 140),
+        ])
+        return row
+    }
+
+    // MARK: - Appearance
+
+    /// Syncs the appearance + theme popups with the config on disk.
+    private func refreshAppearance() {
+        let config = ConfigStore(fileURL: configURL).load()
+        if let index = AppearanceMode.allCases.firstIndex(of: config.appearance) {
+            appearancePopup.selectItem(at: index)
+        }
+        let dark = QColorScheme.named(config.themeDark) ?? .midnight
+        if let index = QColorScheme.darkSchemes.firstIndex(of: dark) {
+            darkThemePopup.selectItem(at: index)
+        }
+        let light = QColorScheme.named(config.themeLight) ?? .paper
+        if let index = QColorScheme.lightSchemes.firstIndex(of: light) {
+            lightThemePopup.selectItem(at: index)
+        }
+    }
+
+    @objc private func appearancePicked(_ sender: NSPopUpButton) {
+        let modes = AppearanceMode.allCases
+        guard (0..<modes.count).contains(sender.indexOfSelectedItem) else { return }
+        onSetAppearance?(modes[sender.indexOfSelectedItem])
+        rebuildAfterThemeChange()
+    }
+
+    @objc private func darkThemePicked(_ sender: NSPopUpButton) {
+        let schemes = QColorScheme.darkSchemes
+        guard (0..<schemes.count).contains(sender.indexOfSelectedItem) else { return }
+        onSelectTheme?(schemes[sender.indexOfSelectedItem])
+        rebuildAfterThemeChange()
+    }
+
+    @objc private func lightThemePicked(_ sender: NSPopUpButton) {
+        let schemes = QColorScheme.lightSchemes
+        guard (0..<schemes.count).contains(sender.indexOfSelectedItem) else { return }
+        onSelectTheme?(schemes[sender.indexOfSelectedItem])
+        rebuildAfterThemeChange()
+    }
+
+    /// Re-themes this window after an appearance/scheme change made from it:
+    /// token colors are baked into the labels at build time, so the content is
+    /// rebuilt against the new palette.
+    private func rebuildAfterThemeChange() {
+        switches.removeAll()
+        window?.appearance = QTheme.current.appearance
+        window?.backgroundColor = QTheme.current.bg1Color
+        window?.contentView = buildContent()
     }
 
     private func harnessRow(_ harness: Harness) -> (NSView, NSSwitch) {
@@ -133,12 +297,31 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return label
     }
 
-    private func caption(_ text: String) -> NSTextField {
+    /// A caption label; when `link`/`url` are given, that substring becomes a
+    /// clickable hyperlink (accent-colored, per the design rules).
+    private func caption(_ text: String, link: String? = nil, url: String? = nil) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: 11)
         label.textColor = QTheme.current.fg3Color
         label.translatesAutoresizingMaskIntoConstraints = false
         label.widthAnchor.constraint(lessThanOrEqualToConstant: 420).isActive = true
+
+        if let link, let url = url.flatMap(URL.init(string:)),
+           let range = text.range(of: link) {
+            let attributed = NSMutableAttributedString(string: text, attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: QTheme.current.fg3Color,
+            ])
+            attributed.addAttributes([
+                .link: url,
+                .foregroundColor: QTheme.current.accentColor,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: NSRange(range, in: text))
+            label.attributedStringValue = attributed
+            // Selectable is what makes the .link attribute clickable in a label.
+            label.isSelectable = true
+            label.allowsEditingTextAttributes = true
+        }
         return label
     }
 
@@ -153,6 +336,100 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let home = NSHomeDirectory()
         let path = configURL.path
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
+    }
+
+    // MARK: - Sessions
+
+    /// Syncs the preserve toggle + status line with the config and zmx state,
+    /// and refreshes the orphaned-session count off-main.
+    private func refreshSessions() {
+        let config = ConfigStore(fileURL: configURL).load()
+        preserveSwitch.state = config.preserveSessions ? .on : .off
+
+        // Which zmx binary backs the feature is an implementation detail; the
+        // status line only appears when zmx is missing, to explain the toggle.
+        let zmxPath = ZmxRunner.locate()
+        sessionStatusLabel.isHidden = zmxPath != nil
+        if zmxPath == nil {
+            sessionStatusLabel.stringValue = "zmx not installed — enabling offers to install it"
+        }
+
+        orphanButton.isHidden = true
+        guard let zmx = zmxPath else { return }
+        let liveIDs = liveSurfaceIDs()
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let existing = ZmxRunner.listQuerttySessions(zmxPath: zmx)
+            let orphans = SessionPersistence.orphans(existing: existing, liveSurfaceIDs: liveIDs)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.orphanSessions = orphans
+                self.orphanButton.title = "Kill \(orphans.count) Orphaned Session\(orphans.count == 1 ? "" : "s")"
+                self.orphanButton.isHidden = orphans.isEmpty
+            }
+        }
+    }
+
+    @objc private func preserveToggled(_ sender: NSSwitch) {
+        let enabling = sender.state == .on
+        if !enabling {
+            savePreserveSessions(false)
+            refreshSessions()
+            return
+        }
+
+        if ZmxRunner.locate() != nil {
+            savePreserveSessions(true)
+            refreshSessions()
+            return
+        }
+
+        // zmx missing: offer to download the release binary into ~/.quertty/bin.
+        let alert = NSAlert()
+        alert.messageText = "Session preservation requires zmx"
+        alert.informativeText = "Download zmx \(ZmxRunner.version) from zmx.sh now? It installs into ~/.quertty/bin — nothing else is touched."
+        alert.addButton(withTitle: "Install")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            sender.state = .off
+            return
+        }
+
+        sender.isEnabled = false
+        sessionStatusLabel.stringValue = "Installing zmx…"
+        ZmxRunner.install { [weak self] zmxPath in
+            guard let self else { return }
+            self.preserveSwitch.isEnabled = true
+            if zmxPath != nil {
+                self.savePreserveSessions(true)
+            } else {
+                self.preserveSwitch.state = .off
+                self.presentAlert(
+                    title: "zmx install failed",
+                    message: "Install it manually, then re-enable:\n\n\(ZmxRunner.installHint)",
+                    warning: true
+                )
+            }
+            self.refreshSessions()
+        }
+    }
+
+    /// Persists the toggle to the config file; the app's config watcher picks
+    /// up the change and re-threads preservation (new panes only).
+    private func savePreserveSessions(_ enabled: Bool) {
+        let store = ConfigStore(fileURL: configURL)
+        var config = store.load()
+        config.preserveSessions = enabled
+        store.save(config)
+    }
+
+    @objc private func killOrphans(_ sender: Any?) {
+        guard let zmx = ZmxRunner.locate(), !orphanSessions.isEmpty else { return }
+        ZmxRunner.kill(sessions: orphanSessions, zmxPath: zmx)
+        orphanButton.isHidden = true
+        // Re-check shortly after the background kill has had a moment.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.refreshSessions()
+        }
     }
 
     // MARK: - Editor picker

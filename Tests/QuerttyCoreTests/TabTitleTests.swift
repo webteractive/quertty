@@ -17,8 +17,16 @@ import Foundation
     #expect(TabTitle.display(manualTitle: nil, focusedSurfaceTitle: "-zsh", workingDir: "/x/y", index: 0) == "y")
 }
 
-@Test func tabTitleAgentNameWinsOverCommandAndPwd() {
-    #expect(TabTitle.display(manualTitle: nil, agentName: "Claude", focusedSurfaceTitle: "vim", workingDir: "/x/y", index: 0) == "Claude")
+@Test func tabTitleAgentPrefixesTheEmittedTitle() {
+    // Agent identity + the title the CLI emits → "claude code: <emits>".
+    #expect(TabTitle.display(manualTitle: nil, agentName: "claude code", focusedSurfaceTitle: "✳ fixing tests", workingDir: "/x/y", index: 0) == "claude code: ✳ fixing tests")
+}
+
+@Test func tabTitleAgentAloneWhenNoUsefulTitle() {
+    // No emitted title (or just a shell name) → the agent name stands alone.
+    #expect(TabTitle.display(manualTitle: nil, agentName: "codex", focusedSurfaceTitle: nil, workingDir: "/x/y", index: 0) == "codex")
+    #expect(TabTitle.display(manualTitle: nil, agentName: "codex", focusedSurfaceTitle: "-zsh", workingDir: "/x/y", index: 0) == "codex")
+    #expect(TabTitle.display(manualTitle: nil, agentName: "codex", focusedSurfaceTitle: "  ", workingDir: "/x/y", index: 0) == "codex")
 }
 
 @Test func tabTitleUsesCommandWhenNoWorkingDir() {

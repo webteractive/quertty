@@ -55,6 +55,20 @@ public struct Layout: Codable, Sendable, Equatable {
         return changed
     }
 
+    /// Mutate the leaf surface with `surfaceID` in place (e.g. its persisted
+    /// title). Returns false if no such leaf exists.
+    @discardableResult
+    public mutating func update(surfaceID: UUID, _ mutate: (inout Surface) -> Void) -> Bool {
+        var changed = false
+        root = Self.transform(root) { node in
+            guard case .leaf(var surface) = node, surface.id == surfaceID else { return nil }
+            mutate(&surface)
+            changed = true
+            return .leaf(surface)
+        }
+        return changed
+    }
+
     // MARK: - Recursion helpers
 
     /// Top-down (pre-order) rewrite: apply `rewrite` to each node; if it returns a

@@ -26,6 +26,7 @@ let project = Project(
                 "NSPrincipalClass": "NSApplication",
             ]),
             sources: ["App/Sources/App/**"],
+            resources: ["App/Resources/**/*.svg"],
             dependencies: [
                 // GhosttyKit (static) is linked transitively via QuerttyGhostty;
                 // linking it here too triggers a static-double-link warning.

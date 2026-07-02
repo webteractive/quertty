@@ -44,6 +44,8 @@ public struct AppConfig: Equatable, Sendable {
     /// App used by "Open in Editor" (an app name like "Zed" or a bundle id like
     /// "dev.zed.Zed"). `nil` → the system default app for the file.
     public var editor: String?
+    /// When true, panes run inside zmx sessions that survive app quit/relaunch.
+    public var preserveSessions: Bool
     /// Raw ghostty directives (from `ghostty.<key> = <value>` lines), forwarded
     /// to the terminal unchanged.
     public var ghostty: [GhosttyDirective]
@@ -56,12 +58,14 @@ public struct AppConfig: Equatable, Sendable {
         themeDark: String = AppConfig.defaultThemeDark,
         themeLight: String = AppConfig.defaultThemeLight,
         editor: String? = nil,
+        preserveSessions: Bool = false,
         ghostty: [GhosttyDirective] = []
     ) {
         self.appearance = appearance
         self.themeDark = themeDark
         self.themeLight = themeLight
         self.editor = editor
+        self.preserveSessions = preserveSessions
         self.ghostty = ghostty
     }
 
@@ -74,8 +78,9 @@ public struct AppConfig: Equatable, Sendable {
     /// color values survive); blank lines are skipped; keys are case-insensitive;
     /// values are trimmed.
     ///
-    /// `appearance`, `theme-dark`, `theme-light`, and `editor` are quertty's own
-    /// keys. **Every other `key = value` line is treated as a ghostty directive**
+    /// `appearance`, `theme-dark`, `theme-light`, `editor`, and
+    /// `preserve-sessions` are quertty's own keys. **Every other `key = value`
+    /// line is treated as a ghostty directive**
     /// and forwarded verbatim — so a user can paste their existing ghostty config
     /// straight in. Ghostty defines none of the reserved keys, so no collision.
     public static func parse(_ text: String) -> AppConfig {
@@ -101,6 +106,8 @@ public struct AppConfig: Equatable, Sendable {
                 config.themeLight = value
             case "editor":
                 config.editor = value
+            case "preserve-sessions":
+                config.preserveSessions = ["true", "yes", "on", "1"].contains(value.lowercased())
             default:
                 // Anything else is a pasted ghostty directive → forward verbatim.
                 config.ghostty.append(GhosttyDirective(key: rawKey, value: value))
@@ -128,6 +135,9 @@ public struct AppConfig: Equatable, Sendable {
         # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
         theme-dark  = \(themeDark)
         theme-light = \(themeLight)
+
+        # Keep terminal sessions alive across app quit/relaunch (requires zmx).
+        preserve-sessions = \(preserveSessions)
 
         """
         if let editor, !editor.isEmpty {
@@ -169,6 +179,10 @@ public struct AppConfig: Equatable, Sendable {
     # App used by Settings → "Open in Editor" (an app name like Zed, or a bundle
     # id like dev.zed.Zed). When unset, the system default app for the file opens.
     # editor = Zed
+
+    # Keep terminal sessions alive across app quit/relaunch. Requires zmx
+    # (brew install neurosnap/tap/zmx); also toggleable in Settings (⌘,).
+    preserve-sessions = false
 
     # Paste your ghostty config below — any non-quertty key is forwarded to the
     # terminal verbatim, so an existing ghostty config works as-is. For example:

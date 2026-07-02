@@ -12,6 +12,7 @@ struct SidebarProject {
     let isPinned: Bool
     let tabTitles: [String]              // .count >= 2 → expandable
     let tabStatuses: [AgentStatus?]      // parallel to tabTitles (agent status per tab)
+    let tabIcons: [NSImage?]             // parallel to tabTitles (tool logo per tab)
     let status: AgentStatus?             // project roll-up (most-severe across tabs)
 }
 
@@ -437,6 +438,7 @@ extension SidebarView: NSOutlineViewDelegate {
                   projects[p].tabTitles.indices.contains(t) else { return nil }
             let title = projects[p].tabTitles[t]
             let status = projects[p].tabStatuses.indices.contains(t) ? projects[p].tabStatuses[t] : nil
+            let icon = projects[p].tabIcons.indices.contains(t) ? projects[p].tabIcons[t] : nil
 
             let identifier = NSUserInterfaceItemIdentifier("TabCell")
             let cellView: TabCellView
@@ -446,7 +448,7 @@ extension SidebarView: NSOutlineViewDelegate {
                 cellView = TabCellView()
                 cellView.identifier = identifier
             }
-            cellView.configure(title: title, isActive: p == activeProject && t == activeTab, agentStatus: status)
+            cellView.configure(title: title, isActive: p == activeProject && t == activeTab, agentStatus: status, icon: icon)
             return cellView
         }
     }
@@ -648,7 +650,11 @@ private final class ProjectCellView: NSTableCellView {
 private final class TabCellView: NSTableCellView {
 
     private let dot = NSView()
+    private let iconView = NSImageView()
     private let titleLabel: NSTextField
+    /// Collapses the logo slot when a tab has none (0 width, no gap).
+    private var iconWidth: NSLayoutConstraint!
+    private var iconGap: NSLayoutConstraint!
 
     override init(frame frameRect: NSRect) {
         titleLabel = NSTextField(labelWithString: "")
@@ -660,19 +666,30 @@ private final class TabCellView: NSTableCellView {
         dot.translatesAutoresizingMaskIntoConstraints = false
         addSubview(dot)
 
+        iconView.imageScaling = .scaleProportionallyDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(iconView)
+
         titleLabel.font = QTheme.monoFont(size: 12)
         titleLabel.textColor = QTheme.current.fg2Color
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
+        iconWidth = iconView.widthAnchor.constraint(equalToConstant: 0)
+        iconGap = titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 0)
         NSLayoutConstraint.activate([
             dot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             dot.centerYAnchor.constraint(equalTo: centerYAnchor),
             dot.widthAnchor.constraint(equalToConstant: 6),
             dot.heightAnchor.constraint(equalToConstant: 6),
 
-            titleLabel.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 8),
+            iconView.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 8),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconWidth,
+            iconView.heightAnchor.constraint(equalToConstant: 12),
+
+            iconGap,
             titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
@@ -681,9 +698,14 @@ private final class TabCellView: NSTableCellView {
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError("not supported") }
 
-    func configure(title: String, isActive: Bool, agentStatus: AgentStatus?) {
+    func configure(title: String, isActive: Bool, agentStatus: AgentStatus?, icon: NSImage? = nil) {
         titleLabel.stringValue = title
         titleLabel.textColor = isActive ? QTheme.current.fgColor : QTheme.current.fg2Color
+
+        iconView.image = icon
+        iconView.contentTintColor = titleLabel.textColor
+        iconWidth.constant = icon == nil ? 0 : 12
+        iconGap.constant = icon == nil ? 0 : 6
 
         // Dot color: agent status when present (green/yellow/dim), else the
         // active/inactive accent. Pulse when an agent is running/needs-attention,

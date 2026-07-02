@@ -84,6 +84,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Forward the user's ghostty config (file + passthrough) to the terminal.
         tvc.ghosttyConfiguration = makeTerminalConfiguration()
         tvc.onReloadConfig = { [weak self] in self?.reloadConfiguration(nil) }
+        // Session preservation must be threaded before the view loads (the
+        // launch command is consulted when each pane spawns).
+        applySessionPreservation(to: tvc)
 
         let window = QuerttyWindow(
             contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -198,6 +201,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         saveConfig()
     }
 
+    /// Persists `scheme` as the dark or light choice, applying it live only
+    /// when it belongs to the currently visible axis — picking the other
+    /// axis's theme (e.g. the light theme while in dark mode) shouldn't flip
+    /// the window; it takes effect next time that axis is active.
+    func selectTheme(_ scheme: QColorScheme) {
+        if scheme.isDark == QTheme.scheme.isDark {
+            applyScheme(scheme)   // applies live + persists
+            return
+        }
+        if scheme.isDark {
+            appConfig.themeDark = scheme.displayName
+        } else {
+            appConfig.themeLight = scheme.displayName
+        }
+        saveConfig()
+    }
+
     /// Switches the appearance axis (system / dark / light), re-resolving the
     /// scheme, updating chrome + observation, and persisting.
     func setAppearanceMode(_ mode: AppearanceMode) {
@@ -215,11 +235,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func setAppearanceDark(_ sender: Any?) { setAppearanceMode(.dark) }
     @objc private func setAppearanceLight(_ sender: Any?) { setAppearanceMode(.light) }
 
-    /// Builds the terminal override config from the ghostty directives pasted
-    /// into quertty's config. Returns nil when there are none.
+    /// Ghostty directives quertty ships as defaults. The user's own config
+    /// directives are applied after these, so they win on conflict (ghostty
+    /// last-wins semantics for scalar keys).
+    private static let defaultGhosttyDirectives: [(key: String, value: String)] = [
+        ("shell-integration", "zsh"),
+        ("shell-integration-features", "ssh-env,ssh-terminfo"),
+    ]
+
+    /// Builds the terminal config: quertty's default directives, then the
+    /// ghostty directives pasted into quertty's config.
     private func makeTerminalConfiguration() -> TerminalConfiguration? {
-        guard !appConfig.ghostty.isEmpty else { return nil }
-        return TerminalConfiguration { builder in
+        TerminalConfiguration { builder in
+            for directive in Self.defaultGhosttyDirectives {
+                builder.withCustom(directive.key, directive.value)
+            }
             for directive in appConfig.ghostty {
                 builder.withCustom(directive.key, directive.value)
             }
@@ -238,6 +268,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startObservingSystemAppearance()
         terminalViewController?.applyTheme()                                  // chrome + terminal theme
         terminalViewController?.reloadGhosttyConfiguration(makeTerminalConfiguration())  // terminal overrides
+        if let tvc = terminalViewController {
+            applySessionPreservation(to: tvc)                                 // affects new panes only
+        }
+    }
+
+    // MARK: - Session preservation
+
+    /// Threads session preservation into the terminal VC: when enabled and zmx
+    /// is installed, new panes launch `zmx attach quertty-<id>` instead of a
+    /// bare shell. Affects NEW panes only. Explicitly closed panes always get
+    /// their sessions killed when zmx is present (regardless of the toggle, so
+    /// closing panes after disabling still cleans up).
+    private func applySessionPreservation(to tvc: TerminalViewController) {
+        let zmxPath = ZmxRunner.locate()
+
+        if appConfig.preserveSessions, let zmx = zmxPath {
+            tvc.sessionCommandProvider = { id in
+                SessionPersistence.attachCommand(zmxPath: zmx, surfaceID: id)
+            }
+        } else {
+            tvc.sessionCommandProvider = nil
+            if appConfig.preserveSessions { presentZmxMissingAlertOnce() }
+        }
+
+        if let zmx = zmxPath {
+            tvc.onSurfacesClosed = { ids in
+                ZmxRunner.kill(sessions: ids.map(SessionPersistence.sessionName(for:)), zmxPath: zmx)
+            }
+        } else {
+            tvc.onSurfacesClosed = nil
+        }
+    }
+
+    /// One-time guidance when `preserve-sessions = true` was set by hand but
+    /// zmx isn't installed (the Settings toggle drives an install instead).
+    private func presentZmxMissingAlertOnce() {
+        let key = "quertty.zmxMissingAlertShown"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "preserve-sessions is on, but zmx is not installed"
+            alert.informativeText = """
+            Panes will use plain shells until zmx is installed.
+
+            \(ZmxRunner.installHint)
+
+            Settings (⌘,) can install it for you.
+            """
+            alert.runModal()
+        }
     }
 
     // MARK: - Settings
@@ -245,7 +326,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindowController: SettingsWindowController?
 
     @objc private func openSettings(_ sender: Any?) {
-        let controller = settingsWindowController ?? SettingsWindowController(installer: hookInstaller)
+        let controller = settingsWindowController ?? SettingsWindowController(
+            installer: hookInstaller,
+            liveSurfaceIDs: { [weak self] in self?.terminalViewController?.allSurfaceIDs ?? [] }
+        )
+        controller.onSetAppearance = { [weak self] mode in self?.setAppearanceMode(mode) }
+        controller.onSelectTheme = { [weak self] scheme in self?.selectTheme(scheme) }
         settingsWindowController = controller
         controller.refresh()
         controller.showWindow(nil)

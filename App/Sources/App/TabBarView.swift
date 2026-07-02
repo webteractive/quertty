@@ -115,7 +115,9 @@ final class TabBarView: NSView {
     // MARK: - Update
 
     /// Rebuilds tab items from `titles` and marks `selectedIndex` as selected.
-    func update(titles: [String], selectedIndex: Int) {
+    /// `icons` (parallel to `titles`, padded with nil) show an agent logo in
+    /// the pill when one is bundled.
+    func update(titles: [String], icons: [NSImage?] = [], selectedIndex: Int) {
         cancelRename()
 
         // Remove old items.
@@ -127,7 +129,8 @@ final class TabBarView: NSView {
 
         // Build new items.
         for (index, title) in titles.enumerated() {
-            let item = TabItemView(title: title, index: index, isSelected: index == selectedIndex, showsClose: titles.count > 1)
+            let icon = index < icons.count ? icons[index] : nil
+            let item = TabItemView(title: title, icon: icon, index: index, isSelected: index == selectedIndex, showsClose: titles.count > 1)
             item.onSelect = { [weak self] idx in
                 self?.onSelect?(idx)
             }
@@ -286,6 +289,9 @@ private final class TabItemView: NSView {
     // MARK: Subviews
 
     private let statusDot: NSView
+    /// Agent logo shown before the title when one is bundled (see
+    /// TerminalViewController.agentIcon); nil → the name prefix is in the text.
+    private let iconView: NSImageView?
     private let titleLabel: NSTextField
     private let closeButton: NSButton
     /// Accent bar pinned to the top edge, shown only when selected (handoff).
@@ -306,7 +312,7 @@ private final class TabItemView: NSView {
 
     // MARK: Init
 
-    init(title: String, index: Int, isSelected: Bool, showsClose: Bool) {
+    init(title: String, icon: NSImage? = nil, index: Int, isSelected: Bool, showsClose: Bool) {
         self.index = index
         self.isSelected = isSelected
 
@@ -315,9 +321,22 @@ private final class TabItemView: NSView {
         statusDot.layer?.cornerRadius = 3.5
         statusDot.translatesAutoresizingMaskIntoConstraints = false
 
+        if let icon {
+            let view = NSImageView(image: icon)
+            view.imageScaling = .scaleProportionallyDown
+            view.translatesAutoresizingMaskIntoConstraints = false
+            iconView = view
+        } else {
+            iconView = nil
+        }
+
         titleLabel = NSTextField(labelWithString: title)
         titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        // High (not required): pills size to their title up to maxWidth, but
+        // still compress toward minWidth when the bar genuinely runs out of
+        // room (the container's required trailing constraint wins). Low would
+        // let the stack squeeze every pill to minWidth even with free space.
+        titleLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // × close button — use the system xmark symbol when available.
@@ -342,6 +361,7 @@ private final class TabItemView: NSView {
         layer?.addSublayer(topBar)
 
         addSubview(statusDot)
+        if let iconView { addSubview(iconView) }
         addSubview(titleLabel)
 
         var constraints: [NSLayoutConstraint] = [
@@ -350,12 +370,23 @@ private final class TabItemView: NSView {
             statusDot.widthAnchor.constraint(equalToConstant: 7),
             statusDot.heightAnchor.constraint(equalToConstant: 7),
 
-            titleLabel.leadingAnchor.constraint(equalTo: statusDot.trailingAnchor, constant: 8),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             heightAnchor.constraint(equalToConstant: 28),
             widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minWidth),
             widthAnchor.constraint(lessThanOrEqualToConstant: Self.maxWidth),
         ]
+
+        if let iconView {
+            constraints += [
+                iconView.leadingAnchor.constraint(equalTo: statusDot.trailingAnchor, constant: 6),
+                iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+                iconView.widthAnchor.constraint(equalToConstant: 14),
+                iconView.heightAnchor.constraint(equalToConstant: 14),
+                titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 5),
+            ]
+        } else {
+            constraints.append(titleLabel.leadingAnchor.constraint(equalTo: statusDot.trailingAnchor, constant: 8))
+        }
 
         if showsClose {
             // Only show a × when there are 2+ tabs (the last tab can't be closed).
@@ -403,6 +434,8 @@ private final class TabItemView: NSView {
             titleLabel.textColor = theme.fg2Color
             topBar.isHidden = true
         }
+        // Template logo tints along with the title text.
+        iconView?.contentTintColor = titleLabel.textColor
     }
 
     // MARK: Mouse interaction

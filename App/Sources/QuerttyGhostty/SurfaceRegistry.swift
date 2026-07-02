@@ -107,6 +107,16 @@ public final class SurfaceRegistry {
     /// created.  Assign before the first `terminalView(for:)` call.
     public var terminalConfiguration: TerminalConfiguration?
 
+    /// When set, supplies the ghostty `command` a surface's pane should launch
+    /// instead of the default shell (e.g. `zmx attach quertty-xxxx` for session
+    /// preservation). Consulted once, at surface creation; nil → default shell.
+    public var surfaceCommand: ((Surface) -> String?)?
+
+    /// Called with the surface IDs removed by `prune(keeping:)` — the app layer
+    /// uses this to kill those surfaces' persistent sessions on explicit close
+    /// (app quit never prunes, so quit leaves sessions running).
+    public var onSurfacesRemoved: (([UUID]) -> Void)?
+
     // MARK: - Factories
 
     /// Closure used to create a new controller for a surface that has no
@@ -174,9 +184,12 @@ public final class SurfaceRegistry {
     }
 
     /// Returns the live terminal title for a surface's focused pane, or `nil`
-    /// if the surface has no entry yet or no state was created for it.
+    /// if the surface has no entry yet, no state was created for it, or the
+    /// terminal hasn't reported a title (the state's initial value is "", not
+    /// nil — callers rely on nil to fall back to the persisted title).
     public func title(for surface: Surface) -> String? {
-        pairs[surface.id]?.viewState?.title
+        guard let title = pairs[surface.id]?.viewState?.title, !title.isEmpty else { return nil }
+        return title
     }
 
     /// Returns the live working directory for a surface's focused pane, or `nil`
@@ -215,8 +228,10 @@ public final class SurfaceRegistry {
     /// deallocated (which tears down the PTY and ghostty surface).
     public func prune(keeping ids: Set<UUID>) {
         let removed = pairs.keys.filter { !ids.contains($0) }
+        guard !removed.isEmpty else { return }
         for id in removed { cancellables[id] = nil }
         pairs = pairs.filter { ids.contains($0.key) }
+        onSurfacesRemoved?(removed)
     }
 
     /// The set of surface IDs that currently have a live pair.
@@ -252,7 +267,14 @@ public final class SurfaceRegistry {
         // first frame is already in-palette (no flash of default colors).
         if let tc = ctrl as? TerminalController {
             if let theme = terminalTheme { tc.setTheme(theme) }
-            if let config = terminalConfiguration { tc.setTerminalConfiguration(config) }
+            // Merge the shared passthrough config with this surface's launch
+            // command (session preservation), when either is present.
+            let command = surfaceCommand?(surface)
+            if terminalConfiguration != nil || command != nil {
+                var config = terminalConfiguration ?? TerminalConfiguration()
+                if let command { config = config.custom("command", command) }
+                tc.setTerminalConfiguration(config)
+            }
         }
         let (view, state) = viewFactory(surface, ctrl)
         let pair = TerminalViewPair(controller: ctrl, view: view, viewState: state)

@@ -71,6 +71,13 @@ final class TerminalViewController: NSViewController {
     /// Watches the hook event sink (`~/.quertty/agent-events.jsonl`).
     private var agentEventWatcher: AgentEventWatcher?
 
+    /// Foreground command per preserved pane, from the zmx/ps probe. This is
+    /// the identity used for tab logos/names; hook events only drive the
+    /// status dots. Known agents get brand logos; other tools (vim, nano)
+    /// get one when we bundle it.
+    private var foregroundBySurface: [UUID: String] = [:]
+    private var foregroundPollTimer: Timer?
+
     /// The pinned libghostty-spm version (no runtime version API is exposed).
     /// Keep in sync with `Project.swift`'s package requirement.
     private static let libghosttyVersion = "1.2.7"
@@ -119,6 +126,31 @@ final class TerminalViewController: NSViewController {
     /// owner before the view loads so the first panes pick it up.
     var ghosttyConfiguration: TerminalConfiguration?
 
+    /// When set, new panes launch this command instead of the default shell
+    /// (session preservation: `zmx attach quertty-<id>`). Affects NEW panes only.
+    var sessionCommandProvider: ((UUID) -> String?)? {
+        didSet {
+            registry.surfaceCommand = sessionCommandProvider.map { provider in
+                { surface in provider(surface.id) }
+            }
+        }
+    }
+
+    /// Called with surface IDs removed by an explicit close (pane/tab/project),
+    /// so their persistent sessions can be killed. App quit never fires this.
+    var onSurfacesClosed: (([UUID]) -> Void)? {
+        didSet { registry.onSurfacesRemoved = onSurfacesClosed }
+    }
+
+    /// Every surface ID across all projects/tabs/panes (for orphan diffing).
+    var allSurfaceIDs: [UUID] {
+        workspace.projects.flatMap { project in
+            project.tabList.trees.flatMap { tree in
+                tree.layout.surfaces.map(\.id)
+            }
+        }
+    }
+
     /// Called to reload configuration from disk (⇧⌘,).
     var onReloadConfig: (() -> Void)?
 
@@ -145,12 +177,77 @@ final class TerminalViewController: NSViewController {
 
         // Refresh the tab bar whenever any live surface reports a title or
         // working-directory change so the active tab's name stays current.
-        registry.onTitleChange = { [weak self] _ in
+        registry.onTitleChange = { [weak self] id in
+            self?.persistTitle(for: id)
             self?.refreshTabBar()
             self?.refreshSidebar()
+            // The subscription fires once when the pane's surface pair is
+            // created, which makes this a reliable per-pane one-shot hook.
+            self?.nudgeAfterReattach(id)
         }
 
         startAgentEventWatcher()
+        startForegroundPolling()
+    }
+
+    /// Polls which known agent CLI is in the foreground of each preserved
+    /// pane's zmx session. Cheap (one `zmx list` + one `ps` every few seconds,
+    /// off-main); a no-op when zmx isn't installed or no sessions exist.
+    private func startForegroundPolling() {
+        pollForegroundAgents()
+        foregroundPollTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in
+            self?.pollForegroundAgents()
+        }
+    }
+
+    private func pollForegroundAgents() {
+        guard let zmx = ZmxRunner.locate() else { return }
+        let ids = allSurfaceIDs
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let pids = ZmxRunner.sessionPIDs(zmxPath: zmx)
+            guard !pids.isEmpty, let ps = ZmxRunner.psSnapshot() else { return }
+            var commands: [UUID: String] = [:]
+            for id in ids {
+                guard let pid = pids[SessionPersistence.sessionName(for: id)],
+                      let command = ForegroundProcess.command(forSessionPID: pid, psOutput: ps)
+                else { continue }
+                commands[id] = command
+            }
+            DispatchQueue.main.async {
+                guard let self, self.foregroundBySurface != commands else { return }
+                self.foregroundBySurface = commands
+                self.refreshTabBar()
+                self.refreshSidebar()
+            }
+        }
+    }
+
+    /// Tab-name identity for a pane: the probed foreground agent first, then
+    /// the hook-detected agent (covers panes without a zmx session).
+    private func agentIdentity(for surface: Surface?) -> AgentKind? {
+        guard let surface else { return nil }
+        if let command = foregroundBySurface[surface.id],
+           let descriptor = AgentRegistry.match(command: command) {
+            return descriptor.kind
+        }
+        return agentDetector.state(for: surface.id).kind
+    }
+
+    /// The agent's display name for tab text, lowercased ("claude code").
+    private func agentDisplayName(for surface: Surface?) -> String? {
+        guard let surface, let kind = agentIdentity(for: surface) else { return nil }
+        let descriptor = AgentRegistry.all.first { $0.kind == kind }
+        return (descriptor?.displayName ?? kind.displayName).lowercased()
+    }
+
+    /// The pane's tool logo: agent brand mark (bundled SVG or glyph), or a
+    /// bundled logo for other tools (vim, nano). Nil → the tab shows the name
+    /// prefix / emitted title instead.
+    private func agentIcon(for surface: Surface?) -> NSImage? {
+        guard let surface else { return nil }
+        if let kind = agentIdentity(for: surface) { return AgentIcons.icon(for: kind) }
+        if let command = foregroundBySurface[surface.id] { return AgentIcons.icon(forTool: command) }
+        return nil
     }
 
     override func viewDidAppear() {
@@ -420,6 +517,24 @@ final class TerminalViewController: NSViewController {
         }
         watcher.start()
         agentEventWatcher = watcher
+        replayAgentEvents(from: url)
+    }
+
+    /// One-shot startup replay of the existing event log, so agents that were
+    /// already running before launch (panes reattached to preserved sessions)
+    /// regain their status dots and tab names. The watcher itself tails only
+    /// new lines. Reads a bounded tail of the log off-main; a duplicate of an
+    /// event the watcher also delivers is harmless (same-state reduce).
+    private func replayAgentEvents(from url: URL) {
+        let maxReplayBytes = 256 * 1024
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let data = try? Data(contentsOf: url), !data.isEmpty else { return }
+            let tail = data.count > maxReplayBytes ? data.suffix(maxReplayBytes) : data
+            guard let text = String(data: tail, encoding: .utf8) else { return }
+            let events = AgentEventReplay.liveEvents(fromJSONL: text)
+            guard !events.isEmpty else { return }
+            DispatchQueue.main.async { self?.handleAgentEvents(events) }
+        }
     }
 
     /// Routes hook events to the sessions (surfaces) whose working directory
@@ -535,6 +650,55 @@ final class TerminalViewController: NSViewController {
         return base + projectCommands + schemeCommands
     }
 
+    /// Surfaces already given their post-reattach repaint nudge.
+    private var nudgedSurfaces: Set<UUID> = []
+
+    /// One-shot repaint nudge for preserved panes. A zmx reattach replays the
+    /// screen contents, but a running TUI paints only deltas on top of what it
+    /// believes is on screen — the pane stays half-drawn until a size change
+    /// forces a full redraw (user-confirmed: resizing fixes it). Shortly after
+    /// the pane appears, shrink it by about a cell row and restore it, so the
+    /// program gets SIGWINCH and repaints.
+    private func nudgeAfterReattach(_ surfaceID: UUID) {
+        guard sessionCommandProvider != nil, !nudgedSurfaces.contains(surfaceID) else { return }
+        nudgedSurfaces.insert(surfaceID)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, let surface = self.surface(with: surfaceID) else { return }
+            let view = self.registry.terminalView(for: surface)
+            let original = view.frame.size
+            guard original.height > 40 else { return }
+            view.setFrameSize(NSSize(width: original.width, height: original.height - 20))
+            DispatchQueue.main.async { view.setFrameSize(original) }
+        }
+    }
+
+    /// The model surface with `id`, wherever it lives in the workspace.
+    private func surface(with id: UUID) -> Surface? {
+        for project in workspace.projects {
+            for tree in project.tabList.trees {
+                if let surface = tree.layout.surfaces.first(where: { $0.id == id }) {
+                    return surface
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Writes the live terminal title through to the persisted model, so tab
+    /// names survive relaunch (a zmx reattach doesn't re-emit the title escape
+    /// sequence). No save is scheduled — the debounced structural autosaves and
+    /// the quit-time save carry it to disk.
+    private func persistTitle(for surfaceID: UUID) {
+        for project in workspace.projects {
+            let surfaces = project.tabList.trees.flatMap { $0.layout.surfaces }
+            guard let surface = surfaces.first(where: { $0.id == surfaceID }) else { continue }
+            guard let title = registry.title(for: surface), !title.isEmpty,
+                  title != surface.lastTitle else { return }
+            project.tabList.updateSurface(surfaceID) { $0.lastTitle = title }
+            return
+        }
+    }
+
     private func togglePinActiveProject() {
         workspace.togglePin(at: workspace.activeIndex)
         refreshSidebar()
@@ -551,13 +715,18 @@ final class TerminalViewController: NSViewController {
     /// - and a positional fallback ("Tab N").
     func refreshTabBar() {
         let tabList = workspace.activeTabList
+        var icons: [NSImage?] = []
         let titles: [String] = tabList.trees.indices.map { idx in
             let tree = tabList.trees[idx]
             let focusedSurface = tree.focusedSurface
-            let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) }
+            let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) ?? $0.lastTitle }
             let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
                 ?? focusedSurface?.workingDir
-            let agentName = focusedSurface.flatMap { agentDetector.state(for: $0.id).kind?.displayName }
+            // A bundled logo replaces the name prefix; otherwise the name is
+            // woven into the text ("claude code: <emitted title>").
+            let icon = agentIcon(for: focusedSurface)
+            icons.append(icon)
+            let agentName = icon == nil ? agentDisplayName(for: focusedSurface) : nil
             return TabTitle.display(
                 manualTitle: tree.manualTitle,
                 agentName: agentName,
@@ -566,7 +735,7 @@ final class TerminalViewController: NSViewController {
                 index: idx
             )
         }
-        tabBarView?.update(titles: titles, selectedIndex: tabList.activeIndex)
+        tabBarView?.update(titles: titles, icons: icons, selectedIndex: tabList.activeIndex)
         // The status bar tracks the same focused-pane / active-tab state.
         refreshStatusBar()
     }
@@ -584,14 +753,18 @@ final class TerminalViewController: NSViewController {
             // Only provide tab titles when there are 2+ tabs (single-tab projects are plain rows).
             let tabTitles: [String]
             let tabStatuses: [AgentStatus?]
+            var tabIcons: [NSImage?] = []
             if trees.count >= 2 {
                 tabTitles = trees.indices.map { idx in
                     let tree = trees[idx]
                     let focusedSurface = tree.focusedSurface
-                    let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) }
+                    let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) ?? $0.lastTitle }
                     let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
                         ?? focusedSurface?.workingDir
-                    let agentName = focusedSurface.flatMap { agentDetector.state(for: $0.id).kind?.displayName }
+                    // Same rule as the tab bar: a logo replaces the name prefix.
+                    let icon = agentIcon(for: focusedSurface)
+                    tabIcons.append(icon)
+                    let agentName = icon == nil ? agentDisplayName(for: focusedSurface) : nil
                     return TabTitle.display(
                         manualTitle: tree.manualTitle,
                         agentName: agentName,
@@ -610,6 +783,7 @@ final class TerminalViewController: NSViewController {
                 isPinned: project.isPinned,
                 tabTitles: tabTitles,
                 tabStatuses: tabStatuses,
+                tabIcons: tabIcons,
                 status: rollup
             )
         }
