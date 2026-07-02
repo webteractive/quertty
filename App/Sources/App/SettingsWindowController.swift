@@ -219,7 +219,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func buildSessionsTab() -> NSView {
         let stack = sectionStack()
         stack.addArrangedSubview(caption(
-            "Keep terminal sessions running when quertty quits, and reattach them on relaunch. Powered by zmx.",
+            "Keep terminal sessions running when Zetty quits, and reattach them on relaunch. Powered by zmx.",
             link: "zmx", url: "https://github.com/neurosnap/zmx"
         ))
         preserveSwitch.target = self

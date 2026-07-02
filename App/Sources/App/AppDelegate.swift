@@ -108,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "quertty"
+        window.title = "Zetty"
         window.isOpaque = true
         window.appearance = appearanceOverride
         window.backgroundColor = QTheme.current.bg1Color
@@ -414,7 +414,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
         guard appConfig.confirmQuit, !skipQuitConfirmation else { return .terminateNow }
         let alert = NSAlert()
-        alert.messageText = "Quit quertty?"
+        alert.messageText = "Quit Zetty?"
         alert.informativeText = appConfig.preserveSessions
             ? "Preserved sessions keep running and reattach on next launch."
             : "Running processes in panes will be terminated."

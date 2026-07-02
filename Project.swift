@@ -24,9 +24,14 @@ let project = Project(
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": false,
                 "NSPrincipalClass": "NSApplication",
+                // Brand: display name is "Zetty"; the binary/CLI stay `quertty`
+                // until the identity-layer rename (bundle id, paths, sessions).
+                "CFBundleName": "Zetty",
+                "CFBundleDisplayName": "Zetty",
+                "CFBundleIconFile": "AppIcon",
             ]),
             sources: ["App/Sources/App/**"],
-            resources: ["App/Resources/**/*.svg"],
+            resources: ["App/Resources/**/*.svg", "App/Resources/*.icns"],
             dependencies: [
                 // GhosttyKit (static) is linked transitively via QuerttyGhostty;
                 // linking it here too triggers a static-double-link warning.
