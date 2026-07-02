@@ -37,6 +37,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// KVO token for `NSApp.effectiveAppearance`, active only in `system` mode.
     private var appearanceObservation: NSKeyValueObservation?
 
+    /// Watches the config file for external edits (auto-reload).
+    private var configWatcher: ConfigFileWatcher?
+
     /// The persistent workspace store backed by `~/Library/Application Support/quertty/`.
     private lazy var workspaceStore: WorkspaceStore = {
         let appSupport = FileManager.default.urls(
@@ -99,6 +102,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         startObservingSystemAppearance()
         buildMenuBar()
+
+        // Auto-reload when the config file changes on disk.
+        let watcher = ConfigFileWatcher(url: configStore.fileURL) { [weak self] in
+            self?.reloadConfiguration(nil)
+        }
+        watcher.start()
+        configWatcher = watcher
+    }
+
+    /// Persists the config, suppressing the watcher's self-write bounce.
+    private func saveConfig() {
+        configStore.save(appConfig)
+        configWatcher?.markSaved()
     }
 
     // MARK: - Appearance
@@ -170,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             appConfig.themeLight = scheme.displayName
         }
-        configStore.save(appConfig)
+        saveConfig()
     }
 
     /// Switches the appearance axis (system / dark / light), re-resolving the
@@ -183,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window?.backgroundColor = QTheme.current.bg1Color
         terminalViewController?.applyTheme()
         startObservingSystemAppearance()   // (re)arm or disarm the OS-follow KVO
-        configStore.save(appConfig)
+        saveConfig()
     }
 
     @objc private func setAppearanceSystem(_ sender: Any?) { setAppearanceMode(.system) }
