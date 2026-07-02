@@ -8,7 +8,9 @@ let libghosttyPackage: Package = .remote(
 
 // Stamps the built app's Info.plist with the short git commit ("*" suffix when
 // the working tree is dirty) so the status bar can show which build is running.
-// Runs as the last build phase — after plist processing, before codesigning.
+// The processed Info.plist is declared as a script input so the build system
+// orders the stamp AFTER ProcessInfoPlistFile — without it the script can run
+// first and plist processing then wipes the stamp.
 let stampBuildCommit = """
 PLIST="${TARGET_BUILD_DIR}/${INFOPLIST_PATH}"
 COMMIT=$(git -C "${SRCROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -47,6 +49,7 @@ let project = Project(
             scripts: [
                 .post(script: stampBuildCommit,
                       name: "Stamp build commit",
+                      inputPaths: ["$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)"],
                       basedOnDependencyAnalysis: false),
             ],
             dependencies: [
