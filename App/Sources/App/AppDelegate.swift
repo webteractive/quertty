@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appConfig = configStore.load()
         QTheme.scheme = resolvedScheme()
         NSApp.appearance = appearanceOverride
+        refreshAppIcon()
 
         let tvc = TerminalViewController()
         restoreWorkspace(into: tvc)
@@ -137,6 +138,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configWatcher = watcher
     }
 
+    /// Re-renders the Dock icon from the active scheme (runtime only — the
+    /// bundled .icns stays the static rendition for Finder).
+    private func refreshAppIcon() {
+        NSApp.applicationIconImage = AppIconRenderer.image()
+    }
+
     /// Persists the config, suppressing the watcher's self-write bounce.
     private func saveConfig() {
         configStore.save(appConfig)
@@ -184,6 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newScheme = resolvedScheme()
         guard newScheme != QTheme.scheme else { return }
         QTheme.scheme = newScheme
+        refreshAppIcon()
         window?.backgroundColor = QTheme.current.bg1Color
         terminalViewController?.applyTheme()
     }
@@ -205,6 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applyScheme(_ scheme: QColorScheme) {
         QTheme.scheme = scheme
         window?.backgroundColor = QTheme.current.bg1Color
+        refreshAppIcon()
         terminalViewController?.applyTheme()
 
         if scheme.isDark {
@@ -240,6 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
         window?.backgroundColor = QTheme.current.bg1Color
+        refreshAppIcon()
         terminalViewController?.applyTheme()
         startObservingSystemAppearance()   // (re)arm or disarm the OS-follow KVO
         saveConfig()
@@ -279,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
         window?.backgroundColor = QTheme.current.bg1Color
+        refreshAppIcon()
         startObservingSystemAppearance()
         terminalViewController?.applyTheme()                                  // chrome + terminal theme
         terminalViewController?.reloadGhosttyConfiguration(makeTerminalConfiguration())  // terminal overrides
