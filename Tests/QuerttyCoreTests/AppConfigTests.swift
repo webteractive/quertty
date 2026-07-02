@@ -72,6 +72,16 @@ import Testing
     #expect(c.themeDark == "Nocturne")
 }
 
+@Test func configEditorIsReservedNotPassthrough() {
+    let c = AppConfig.parse("editor = Zed\nfont-size = 14")
+    #expect(c.editor == "Zed")
+    // `editor` must not leak into the ghostty passthrough.
+    #expect(c.ghostty == [GhosttyDirective(key: "font-size", value: "14")])
+    // Defaults to nil, and round-trips through rendered().
+    #expect(AppConfig.parse("").editor == nil)
+    #expect(AppConfig.parse(c.rendered()) == c)
+}
+
 @Test func configBadAppearanceValueDefaults() {
     let c = AppConfig.parse("appearance = neon\ntheme-dark = Frost")
     #expect(c.appearance == .system)   // "neon" invalid → default

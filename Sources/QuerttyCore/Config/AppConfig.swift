@@ -41,6 +41,9 @@ public struct AppConfig: Equatable, Sendable {
     public var themeDark: String
     /// Scheme name used for the light appearance.
     public var themeLight: String
+    /// App used by "Open in Editor" (an app name like "Zed" or a bundle id like
+    /// "dev.zed.Zed"). `nil` → the system default app for the file.
+    public var editor: String?
     /// Raw ghostty directives (from `ghostty.<key> = <value>` lines), forwarded
     /// to the terminal unchanged.
     public var ghostty: [GhosttyDirective]
@@ -52,11 +55,13 @@ public struct AppConfig: Equatable, Sendable {
         appearance: AppearanceMode = .system,
         themeDark: String = AppConfig.defaultThemeDark,
         themeLight: String = AppConfig.defaultThemeLight,
+        editor: String? = nil,
         ghostty: [GhosttyDirective] = []
     ) {
         self.appearance = appearance
         self.themeDark = themeDark
         self.themeLight = themeLight
+        self.editor = editor
         self.ghostty = ghostty
     }
 
@@ -69,10 +74,10 @@ public struct AppConfig: Equatable, Sendable {
     /// color values survive); blank lines are skipped; keys are case-insensitive;
     /// values are trimmed.
     ///
-    /// `appearance`, `theme-dark`, `theme-light` are quertty's own keys. **Every
-    /// other `key = value` line is treated as a ghostty directive** and forwarded
-    /// verbatim — so a user can paste their existing ghostty config straight in.
-    /// Ghostty defines none of the three reserved keys, so there's no collision.
+    /// `appearance`, `theme-dark`, `theme-light`, and `editor` are quertty's own
+    /// keys. **Every other `key = value` line is treated as a ghostty directive**
+    /// and forwarded verbatim — so a user can paste their existing ghostty config
+    /// straight in. Ghostty defines none of the reserved keys, so no collision.
     public static func parse(_ text: String) -> AppConfig {
         var config = AppConfig()
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -94,6 +99,8 @@ public struct AppConfig: Equatable, Sendable {
                 config.themeDark = value
             case "theme-light":
                 config.themeLight = value
+            case "editor":
+                config.editor = value
             default:
                 // Anything else is a pasted ghostty directive → forward verbatim.
                 config.ghostty.append(GhosttyDirective(key: rawKey, value: value))
@@ -122,6 +129,15 @@ public struct AppConfig: Equatable, Sendable {
         theme-dark  = \(themeDark)
         theme-light = \(themeLight)
 
+        """
+        if let editor, !editor.isEmpty {
+            out += """
+            # App used by Settings → "Open in Editor" (app name or bundle id).
+            editor = \(editor)
+
+            """
+        }
+        out += """
         # Paste any ghostty config lines below — they're forwarded to the terminal
         # as-is (e.g. font-family, font-size, cursor-style, window-padding-x, keybind).
 
@@ -149,6 +165,10 @@ public struct AppConfig: Equatable, Sendable {
     # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
     theme-dark  = Twilight
     theme-light = Daylight
+
+    # App used by Settings → "Open in Editor" (an app name like Zed, or a bundle
+    # id like dev.zed.Zed). When unset, the system default app for the file opens.
+    # editor = Zed
 
     # Paste your ghostty config below — any non-quertty key is forwarded to the
     # terminal verbatim, so an existing ghostty config works as-is. For example:
