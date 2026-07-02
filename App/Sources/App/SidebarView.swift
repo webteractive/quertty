@@ -13,6 +13,7 @@ struct SidebarProject {
     let tabTitles: [String]              // .count >= 2 → expandable
     let tabStatuses: [AgentStatus?]      // parallel to tabTitles (agent status per tab)
     let tabIcons: [NSImage?]             // parallel to tabTitles (tool logo per tab)
+    let icon: NSImage?                   // single-tab projects: the pane's tool logo
     let status: AgentStatus?             // project roll-up (most-severe across tabs)
 }
 
@@ -117,6 +118,26 @@ final class SidebarView: NSView {
     private let scrollView = NSScrollView()
     private let outlineView = NSOutlineView()
     private let addButton = NSButton(title: "+", target: nil, action: nil)
+    /// Pill surface behind the Add-project button (matches the status bar's
+    /// Open pill: bg2 + border, fully rounded).
+    private let addPill = NSView()
+
+    /// Attention bell (bottom-right, beside Add project): dim when clear,
+    /// filled yellow with a count while any agent needs attention.
+    private let bellButton = NSButton()
+    private var attentionCount = 0
+
+    /// Settings gear (bottom-right corner).
+    private let gearButton = NSButton()
+
+    /// Compact add-project button beside the search field.
+    private let topAddButton = NSButton()
+
+    /// Shows the attention list (panes whose agents need attention).
+    var onShowBellMenu: ((NSView) -> Void)?
+
+    /// Opens the Settings window (⌘, equivalent).
+    var onOpenSettings: (() -> Void)?
 
     // MARK: - Init
 
@@ -151,10 +172,22 @@ final class SidebarView: NSView {
     private func styleSearchField() {
         searchField.font = QTheme.monoFont(size: 12)
         searchField.textColor = QTheme.current.fgColor
+        // The control renders its bezel/icons per its own appearance — pin it
+        // to the scheme's axis or it lags behind dark↔light switches.
+        searchField.appearance = QTheme.current.appearance
         if let cell = searchField.cell as? NSSearchFieldCell {
             cell.backgroundColor = QTheme.current.bg2Color
             cell.drawsBackground = true
+            cell.placeholderAttributedString = NSAttributedString(
+                string: "Filter projects…",
+                attributes: [
+                    .font: QTheme.monoFont(size: 12),
+                    .foregroundColor: QTheme.current.fg3Color,
+                ]
+            )
         }
+        // Cell color changes don't invalidate the field on their own.
+        searchField.needsDisplay = true
     }
 
     private func setupOutlineView() {
@@ -194,21 +227,120 @@ final class SidebarView: NSView {
         addButton.action = #selector(addButtonClicked(_:))
         addButton.translatesAutoresizingMaskIntoConstraints = false
         styleAddButton()
-        addSubview(addButton)
+        addPill.wantsLayer = true
+        addPill.layer?.cornerRadius = 12
+        addPill.layer?.borderWidth = 1
+        addPill.translatesAutoresizingMaskIntoConstraints = false
+        addPill.addSubview(addButton)
+        addSubview(addPill)
+        NSLayoutConstraint.activate([
+            addButton.leadingAnchor.constraint(equalTo: addPill.leadingAnchor, constant: 10),
+            addButton.trailingAnchor.constraint(equalTo: addPill.trailingAnchor, constant: -11),
+            addButton.centerYAnchor.constraint(equalTo: addPill.centerYAnchor),
+        ])
+
+        bellButton.bezelStyle = .inline
+        bellButton.isBordered = false
+        bellButton.imagePosition = .imageLeading
+        bellButton.imageHugsTitle = true
+        bellButton.target = self
+        bellButton.action = #selector(bellClicked(_:))
+        bellButton.translatesAutoresizingMaskIntoConstraints = false
+        styleBellButton()
+        addSubview(bellButton)
+
+        gearButton.bezelStyle = .inline
+        gearButton.isBordered = false
+        gearButton.imagePosition = .imageOnly
+        gearButton.target = self
+        gearButton.action = #selector(gearClicked(_:))
+        gearButton.translatesAutoresizingMaskIntoConstraints = false
+        gearButton.toolTip = "Settings (⌘,)"
+        styleGearButton()
+        addSubview(gearButton)
+
+        topAddButton.bezelStyle = .inline
+        topAddButton.isBordered = false
+        topAddButton.imagePosition = .imageOnly
+        topAddButton.target = self
+        topAddButton.action = #selector(addButtonClicked(_:))
+        topAddButton.translatesAutoresizingMaskIntoConstraints = false
+        topAddButton.toolTip = "Add project"
+        styleTopAddButton()
+        addSubview(topAddButton)
     }
 
     private func styleAddButton() {
-        if let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add project") {
+        if let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add project")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)) {
             addButton.image = plus
             addButton.contentTintColor = QTheme.current.fg2Color
         }
         addButton.attributedTitle = NSAttributedString(
             string: " Add project",
             attributes: [
-                .font: QTheme.monoFont(size: 12.5, weight: .medium),
-                .foregroundColor: QTheme.current.fg2Color,
+                .font: QTheme.monoFont(size: 12, weight: .medium),
+                .foregroundColor: QTheme.current.fgColor,
             ]
         )
+        addPill.layer?.backgroundColor = QTheme.current.bg2Color.cgColor
+        addPill.layer?.borderColor = QTheme.current.borderColor.cgColor
+    }
+
+    @objc private func bellClicked(_: Any?) {
+        onShowBellMenu?(bellButton)
+    }
+
+    @objc private func gearClicked(_: Any?) {
+        onOpenSettings?()
+    }
+
+    private func styleGearButton() {
+        if #available(macOS 11.0, *) {
+            gearButton.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Settings")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
+        } else {
+            gearButton.title = "⚙"
+        }
+        gearButton.contentTintColor = QTheme.current.fg3Color
+    }
+
+    private func styleTopAddButton() {
+        if #available(macOS 11.0, *) {
+            topAddButton.image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add project")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium))
+        } else {
+            topAddButton.title = "+"
+        }
+        topAddButton.contentTintColor = QTheme.current.fg2Color
+    }
+
+    /// Updates the attention bell state (count of panes needing attention).
+    func updateBell(count: Int) {
+        attentionCount = count
+        styleBellButton()
+    }
+
+    private func styleBellButton() {
+        let theme = QTheme.current
+        let attention = attentionCount > 0
+        if #available(macOS 11.0, *) {
+            bellButton.image = NSImage(
+                systemSymbolName: attention ? "bell.fill" : "bell",
+                accessibilityDescription: "Agent attention"
+            )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
+        }
+        bellButton.contentTintColor = attention ? theme.yellowColor : theme.fg3Color
+        bellButton.attributedTitle = NSAttributedString(
+            string: attention ? " \(attentionCount)" : "",
+            attributes: [
+                .font: QTheme.monoFont(size: 12.5, weight: .semibold),
+                .foregroundColor: theme.yellowColor,
+            ]
+        )
+        bellButton.toolTip = attention
+            ? "\(attentionCount) pane\(attentionCount == 1 ? "" : "s") need attention — click to jump"
+            : "No agent needs attention"
     }
 
     private func setupLayout() {
@@ -217,18 +349,31 @@ final class SidebarView: NSView {
 
             searchField.topAnchor.constraint(equalTo: topAnchor, constant: 10),
             searchField.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
-            searchField.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            searchField.trailingAnchor.constraint(equalTo: topAddButton.leadingAnchor, constant: -6),
             searchField.heightAnchor.constraint(equalToConstant: 26),
+
+            topAddButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            topAddButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
+            topAddButton.widthAnchor.constraint(equalToConstant: 22),
+            topAddButton.heightAnchor.constraint(equalToConstant: 22),
 
             scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 6),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: addButton.topAnchor, constant: -4),
+            scrollView.bottomAnchor.constraint(equalTo: addPill.topAnchor, constant: -6),
 
-            addButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            addButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -8),
-            addButton.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
-            addButton.heightAnchor.constraint(equalToConstant: 24),
+            addPill.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            addPill.trailingAnchor.constraint(lessThanOrEqualTo: bellButton.leadingAnchor, constant: -8),
+            addPill.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+            addPill.heightAnchor.constraint(equalToConstant: 24),
+
+            gearButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            gearButton.centerYAnchor.constraint(equalTo: addPill.centerYAnchor),
+            gearButton.heightAnchor.constraint(equalToConstant: 24),
+
+            bellButton.trailingAnchor.constraint(equalTo: gearButton.leadingAnchor, constant: -10),
+            bellButton.centerYAnchor.constraint(equalTo: addPill.centerYAnchor),
+            bellButton.heightAnchor.constraint(equalToConstant: 24),
         ])
     }
 
@@ -240,6 +385,9 @@ final class SidebarView: NSView {
         scrollView.backgroundColor = QTheme.current.bg0Color
         styleSearchField()
         styleAddButton()
+        styleBellButton()
+        styleGearButton()
+        styleTopAddButton()
     }
 
     // MARK: - Item-object helpers
@@ -427,6 +575,7 @@ extension SidebarView: NSOutlineViewDelegate {
                 isPinned: project.isPinned,
                 isActive: p == activeProject,
                 agentStatus: project.status,
+                toolIcon: project.icon,
                 projectIndex: p,
                 target: self,
                 action: #selector(pinButtonClicked(_:))
@@ -568,8 +717,12 @@ private final class SidebarRowView: NSTableRowView {
 private final class ProjectCellView: NSTableCellView {
 
     private let glyphView = NSImageView()
+    private let toolIconView = NSImageView()
     private let nameLabel: NSTextField
     private let pinButton: NSButton
+    /// Collapses the tool-logo slot when the project has none (0 width, no gap).
+    private var toolIconWidth: NSLayoutConstraint!
+    private var toolIconGap: NSLayoutConstraint!
 
     override init(frame frameRect: NSRect) {
         nameLabel = NSTextField(labelWithString: "")
@@ -580,6 +733,10 @@ private final class ProjectCellView: NSTableCellView {
         glyphView.imageScaling = .scaleProportionallyDown
         glyphView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(glyphView)
+
+        toolIconView.imageScaling = .scaleProportionallyDown
+        toolIconView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(toolIconView)
 
         nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
         nameLabel.textColor = QTheme.current.fgColor
@@ -593,13 +750,20 @@ private final class ProjectCellView: NSTableCellView {
         pinButton.translatesAutoresizingMaskIntoConstraints = false
         addSubview(pinButton)
 
+        toolIconWidth = toolIconView.widthAnchor.constraint(equalToConstant: 0)
+        toolIconGap = nameLabel.leadingAnchor.constraint(equalTo: toolIconView.trailingAnchor, constant: 0)
         NSLayoutConstraint.activate([
             glyphView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
             glyphView.centerYAnchor.constraint(equalTo: centerYAnchor),
             glyphView.widthAnchor.constraint(equalToConstant: 11),
             glyphView.heightAnchor.constraint(equalToConstant: 11),
 
-            nameLabel.leadingAnchor.constraint(equalTo: glyphView.trailingAnchor, constant: 7),
+            toolIconView.leadingAnchor.constraint(equalTo: glyphView.trailingAnchor, constant: 7),
+            toolIconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            toolIconWidth,
+            toolIconView.heightAnchor.constraint(equalToConstant: 13),
+
+            toolIconGap,
             nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             nameLabel.trailingAnchor.constraint(equalTo: pinButton.leadingAnchor, constant: -4),
 
@@ -614,9 +778,16 @@ private final class ProjectCellView: NSTableCellView {
     required init?(coder _: NSCoder) { fatalError("not supported") }
 
     func configure(name: String, isPinned: Bool, isActive: Bool, agentStatus: AgentStatus?,
-                   projectIndex: Int, target: AnyObject, action: Selector) {
+                   toolIcon: NSImage? = nil, projectIndex: Int, target: AnyObject, action: Selector) {
         nameLabel.stringValue = name
         nameLabel.textColor = isActive ? QTheme.current.fgColor : QTheme.current.fg2Color
+
+        // Single-tab projects surface the pane's tool logo on the row itself
+        // (multi-tab projects show logos on their tab child rows instead).
+        toolIconView.image = toolIcon
+        toolIconView.contentTintColor = nameLabel.textColor
+        toolIconWidth.constant = toolIcon == nil ? 0 : 13
+        toolIconGap.constant = toolIcon == nil ? 0 : 6
 
         // Diamond project glyph: filled when an agent is present (tinted by its
         // status) or when active; dim outline otherwise.

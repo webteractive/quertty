@@ -1,6 +1,7 @@
 import AppKit
 import GhosttyTerminal
 import QuerttyCore
+import UserNotifications
 
 /// Window that gives the app's main-menu key equivalents (⌘D / ⇧⌘D / ⌘W)
 /// priority over the focused view. The embedded GhosttyTerminal view otherwise
@@ -84,11 +85,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Forward the user's ghostty config (file + passthrough) to the terminal.
         tvc.ghosttyConfiguration = makeTerminalConfiguration()
         tvc.onReloadConfig = { [weak self] in self?.reloadConfiguration(nil) }
+        tvc.onOpenSettings = { [weak self] in self?.openSettings(nil) }
         // Session preservation must be threaded before the view loads (the
         // launch command is consulted when each pane spawns).
         applySessionPreservation(to: tvc)
         reapOrphanSessions(tvc)
         startControlSocket()
+
+        // Agent needs-attention notifications (two levels, config-gated).
+        UNUserNotificationCenter.current().delegate = self
+        tvc.onAgentNeedsAttention = { [weak self] surface, kind, project in
+            self?.agentNeedsAttention(surface: surface, kind: kind, project: project)
+        }
+        tvc.onAttentionCountChanged = { [weak self] count in
+            guard let self else { return }
+            NSApp.dockTile.badgeLabel = (self.appConfig.notifyBadge && count > 0) ? "\(count)" : nil
+        }
 
         let window = QuerttyWindow(
             contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -272,6 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminalViewController?.reloadGhosttyConfiguration(makeTerminalConfiguration())  // terminal overrides
         if let tvc = terminalViewController {
             applySessionPreservation(to: tvc)                                 // affects new panes only
+            tvc.publishAttentionCount()                                       // re-apply Dock badge gating
         }
     }
 
@@ -364,8 +377,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setAppearanceMode(order[(index + 1) % order.count])
     }
 
+    // MARK: - Agent notifications
+
+    /// An agent transitioned into needs-attention. Config-gated levels:
+    /// attention sound, Dock badge (follows the attention count, applied in
+    /// the count callback), and a macOS notification — posted only while
+    /// quertty is in the background (in front, the sound + yellow dots
+    /// already tell the story).
+    private func agentNeedsAttention(surface: Surface, kind: AgentKind, project: String) {
+        if appConfig.notifySound {
+            NSSound(named: "Ping")?.play()
+            if !NSApp.isActive {
+                NSApp.requestUserAttention(.informationalRequest)   // one Dock bounce
+            }
+        }
+        guard appConfig.notifySystem, !NSApp.isActive else { return }
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "\(kind.displayName.capitalized) needs attention"
+            content.body = "\(project) — \(surface.workingDir)"
+            content.userInfo = ["pane": SessionPersistence.shortID(for: surface.id)]
+            center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
+        }
+    }
+
     /// Set by a CLI `quit` (explicit intent — no dialog on top of it).
     private var skipQuitConfirmation = false
+
+    // (UNUserNotificationCenterDelegate conformance in the extension below.)
 
     /// Quit confirmation (config `confirm-quit`, Settings toggle). The message
     /// reflects what quitting actually does: preserved sessions keep running,
@@ -717,5 +758,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         NSApp.mainMenu = mainMenu
+    }
+}
+
+// MARK: - UNUserNotificationCenterDelegate
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    /// Clicking a needs-attention notification focuses the pane it came from.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        if let pane = response.notification.request.content.userInfo["pane"] as? String {
+            DispatchQueue.main.async { [weak self] in
+                NSApp.activate(ignoringOtherApps: true)
+                _ = self?.terminalViewController?.focusPane(target: .pane(pane))
+            }
+        }
+        completionHandler()
     }
 }

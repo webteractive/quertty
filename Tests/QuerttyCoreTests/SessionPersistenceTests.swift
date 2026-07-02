@@ -46,6 +46,20 @@ private let idB = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
     #expect(AppConfig.parse(config.rendered()) == config)
 }
 
+@Test func configParsesNotificationKeys() {
+    #expect(AppConfig.parse("notify-sound = false").notifySound == false)
+    #expect(AppConfig.parse("notify-badge = false").notifyBadge == false)
+    #expect(AppConfig.parse("notify-system = false").notifySystem == false)
+    #expect(AppConfig.parse("").notifySound == true)    // defaults on
+    #expect(AppConfig.parse("").notifyBadge == true)
+    #expect(AppConfig.parse("").notifySystem == true)
+    // Reserved: must not leak into the ghostty passthrough.
+    #expect(AppConfig.parse("notify-sound = false\nnotify-badge = false\nnotify-system = false").ghostty.isEmpty)
+    // Round-trips through rendered().
+    let config = AppConfig(notifySound: false, notifyBadge: false, notifySystem: false)
+    #expect(AppConfig.parse(config.rendered()) == config)
+}
+
 @Test func configParsesPreserveSessions() {
     #expect(AppConfig.parse("preserve-sessions = true").preserveSessions == true)
     #expect(AppConfig.parse("preserve-sessions = false").preserveSessions == false)

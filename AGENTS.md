@@ -172,6 +172,13 @@ foreground-process probe (see "Tab identity" above). At startup the existing
 event log replays once (`AgentEventReplay`: last event per cwd+agent, `ended`
 drops) so dots recover for agents already running inside preserved sessions.
 
+**Needs-attention notifications** (config-gated, Settings ⌘, → Agents):
+`notify-sound` plays a sound; `notify-badge` badges the Dock icon with the
+attention-pane count (auto-clears when the agent resumes); `notify-system`
+posts a macOS notification while quertty is in the background — clicking it
+focuses the pane. Fired on the *transition into* needsAttention; the startup
+replay never notifies (stale state).
+
 Detection is **hook-driven** — libghostty exposes no PTY fd / child PID, so
 harness hooks *ping* quertty:
 

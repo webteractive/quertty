@@ -154,6 +154,9 @@ final class TerminalViewController: NSViewController {
     /// Called to reload configuration from disk (⇧⌘,).
     var onReloadConfig: (() -> Void)?
 
+    /// Called to open the Settings window (sidebar gear; ⌘, equivalent).
+    var onOpenSettings: (() -> Void)?
+
     // MARK: - View lifecycle
 
     override func loadView() {
@@ -178,12 +181,17 @@ final class TerminalViewController: NSViewController {
         // Refresh the tab bar whenever any live surface reports a title or
         // working-directory change so the active tab's name stays current.
         registry.onTitleChange = { [weak self] id in
-            self?.persistTitle(for: id)
-            self?.refreshTabBar()
-            self?.refreshSidebar()
+            guard let self else { return }
+            // A fresh live title supersedes any staleness mark.
+            if let surface = self.surface(with: id), self.registry.title(for: surface) != nil {
+                self.staleTitleSurfaces.remove(id)
+            }
+            self.persistTitle(for: id)
+            self.refreshTabBar()
+            self.refreshSidebar()
             // The subscription fires once when the pane's surface pair is
             // created, which makes this a reliable per-pane one-shot hook.
-            self?.nudgeAfterReattach(id)
+            self.nudgeAfterReattach(id)
         }
 
         startAgentEventWatcher()
@@ -212,27 +220,39 @@ final class TerminalViewController: NSViewController {
             guard !pids.isEmpty, let ps = ZmxRunner.psSnapshot() else { return }
             var commands: [UUID: String] = [:]
             for id in ids {
-                guard let pid = pids[SessionPersistence.sessionName(for: id)],
-                      let command = ForegroundProcess.command(forSessionPID: pid, psOutput: ps)
-                else { continue }
-                commands[id] = command
+                guard let pid = pids[SessionPersistence.sessionName(for: id)] else { continue }
+                // "" = probed and found an idle shell / nothing running. The
+                // distinction matters: a probed-idle pane must NOT fall back
+                // to hook-detected identity (hooks are cwd-fuzzy and sticky —
+                // a claude that once ran in the same cwd would wrongly brand
+                // an idle pane with its logo).
+                commands[id] = ForegroundProcess.command(forSessionPID: pid, psOutput: ps) ?? ""
             }
             DispatchQueue.main.async {
                 guard let self, self.foregroundBySurface != commands else { return }
+                let previous = self.foregroundBySurface
                 self.foregroundBySurface = commands
+                // A pane that just went idle keeps whatever title its tool
+                // last emitted (ghostty never resets titles) — mark it stale
+                // so the tab falls back to the directory until the terminal
+                // emits a fresh title.
+                for (id, command) in commands where command.isEmpty && previous[id] != "" {
+                    self.markTitleStale(id)
+                }
                 self.refreshTabBar()
                 self.refreshSidebar()
             }
         }
     }
 
-    /// Tab-name identity for a pane: the probed foreground agent first, then
-    /// the hook-detected agent (covers panes without a zmx session).
+    /// Tab-name identity for a pane. The probe is authoritative for any pane
+    /// it examined ("" = probed, idle — no identity); the hook-detected agent
+    /// only covers panes the probe can't see (no zmx session).
     private func agentIdentity(for surface: Surface?) -> AgentKind? {
         guard let surface else { return nil }
-        if let command = foregroundBySurface[surface.id],
-           let descriptor = AgentRegistry.match(command: command) {
-            return descriptor.kind
+        if let command = foregroundBySurface[surface.id] {
+            guard !command.isEmpty else { return nil }
+            return AgentRegistry.match(command: command)?.kind
         }
         return agentDetector.state(for: surface.id).kind
     }
@@ -250,7 +270,9 @@ final class TerminalViewController: NSViewController {
     private func agentIcon(for surface: Surface?) -> NSImage? {
         guard let surface else { return nil }
         if let kind = agentIdentity(for: surface) { return AgentIcons.icon(for: kind) }
-        if let command = foregroundBySurface[surface.id] { return AgentIcons.icon(forTool: command) }
+        if let command = foregroundBySurface[surface.id], !command.isEmpty {
+            return AgentIcons.icon(forTool: command)
+        }
         return nil
     }
 
@@ -360,6 +382,8 @@ final class TerminalViewController: NSViewController {
             self?.selectProject(at: index)
         }
 
+        sidebar.onShowBellMenu = { [weak self] anchor in self?.showAttentionMenu(from: anchor) }
+        sidebar.onOpenSettings = { [weak self] in self?.onOpenSettings?() }
         sidebar.onSelectTab = { [weak self] projectIndex, tabIndex in
             guard let self else { return }
             self.workspace.select(index: projectIndex)
@@ -435,12 +459,13 @@ final class TerminalViewController: NSViewController {
         let statusBar = StatusBarView()
         statusBar.onSelectAppearance = { [weak self] mode in self?.onSetAppearance?(mode) }
         statusBar.onSelectScheme = { [weak self] scheme in self?.onSelectScheme?(scheme) }
+        statusBar.onShowEditorMenu = { [weak self] anchor in self?.showEditorMenu(from: anchor) }
         container.addSubview(statusBar)
         NSLayoutConstraint.activate([
             statusBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            statusBar.heightAnchor.constraint(equalToConstant: 24),
+            statusBar.heightAnchor.constraint(equalToConstant: 30),
         ])
         self.statusBarView = statusBar
     }
@@ -537,13 +562,22 @@ final class TerminalViewController: NSViewController {
             guard let text = String(data: tail, encoding: .utf8) else { return }
             let events = AgentEventReplay.liveEvents(fromJSONL: text)
             guard !events.isEmpty else { return }
-            DispatchQueue.main.async { self?.handleAgentEvents(events) }
+            // Replayed state must not ring bells — it's potentially stale.
+            DispatchQueue.main.async { self?.handleAgentEvents(events, notify: false) }
         }
     }
 
     /// Routes hook events to the sessions (surfaces) whose working directory
     /// matches the event's `cwd`, then refreshes the status dots.
-    private func handleAgentEvents(_ events: [AgentEvent]) {
+    /// Fired when a pane's agent transitions INTO needs-attention (never
+    /// during the startup replay). Payload: pane surface, agent kind, and the
+    /// owning project's name.
+    var onAgentNeedsAttention: ((Surface, AgentKind, String) -> Void)?
+
+    /// Fired whenever the number of attention panes changes (Dock badge).
+    var onAttentionCountChanged: ((Int) -> Void)?
+
+    private func handleAgentEvents(_ events: [AgentEvent], notify: Bool = true) {
         let now = Date().timeIntervalSince1970
         var changed = false
         for event in events {
@@ -554,8 +588,13 @@ final class TerminalViewController: NSViewController {
                         let cwd = registry.workingDirectory(for: surface).map(Self.normalizedPath)
                             ?? Self.normalizedPath(surface.workingDir)
                         if cwd == target {
-                            agentDetector.apply(event: event, session: surface.id, now: now)
+                            let previous = agentDetector.state(for: surface.id).status
+                            let next = agentDetector.apply(event: event, session: surface.id, now: now)
                             changed = true
+                            if notify, next.status == .needsAttention, previous != .needsAttention,
+                               let kind = next.kind {
+                                onAgentNeedsAttention?(surface, kind, project.name)
+                            }
                         }
                     }
                 }
@@ -564,7 +603,57 @@ final class TerminalViewController: NSViewController {
         if changed {
             refreshSidebar()
             refreshTabBar()
+            publishAttentionCount()
         }
+    }
+
+    /// Recomputes the attention-pane count and fires the callback — always,
+    /// so a config reload can re-apply Dock-badge gating even when the count
+    /// itself is unchanged (re-setting the same badge is free).
+    func publishAttentionCount() {
+        let count = workspace.projects
+            .flatMap { $0.tabList.trees.flatMap { $0.layout.surfaces } }
+            .filter { agentDetector.state(for: $0.id).status == .needsAttention }
+            .count
+        sidebarView?.updateBell(count: count)
+        onAttentionCountChanged?(count)
+    }
+
+    /// The bell's menu: every pane whose agent needs attention; selecting one
+    /// jumps to it. The bell is in-app-only — independent of the notification
+    /// config toggles.
+    private func showAttentionMenu(from anchor: NSView) {
+        let menu = NSMenu()
+        for (pIdx, project) in workspace.projects.enumerated() {
+            for (tIdx, tree) in project.tabList.trees.enumerated() {
+                for surface in tree.layout.surfaces
+                where agentDetector.state(for: surface.id).status == .needsAttention {
+                    let kind = agentDetector.state(for: surface.id).kind
+                    let name = kind.map { AgentIcons.icon(for: $0) != nil ? $0.displayName : $0.displayName } ?? "agent"
+                    let item = NSMenuItem(
+                        title: "\(name) — \(project.name)",
+                        action: #selector(attentionPanePicked(_:)), keyEquivalent: ""
+                    )
+                    item.target = self
+                    if let kind, let icon = AgentIcons.icon(for: kind) { item.image = icon }
+                    item.representedObject = [pIdx, tIdx] as [Int]
+                    menu.addItem(item)
+                }
+            }
+        }
+        if menu.items.isEmpty {
+            let item = NSMenuItem(title: "No agent needs attention", action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchor)
+    }
+
+    @objc private func attentionPanePicked(_ sender: NSMenuItem) {
+        guard let location = sender.representedObject as? [Int], location.count == 2 else { return }
+        if location[0] != workspace.activeIndex { selectProject(at: location[0]) }
+        let tabList = workspace.activeTabList
+        if tabList.activeIndex != location[1] { selectTab(at: location[1]) }
     }
 
     // MARK: - Sidebar collapse
@@ -665,9 +754,9 @@ final class TerminalViewController: NSViewController {
                 let panes = tree.layout.surfaces.map { surface -> StatusSnapshot.Pane in
                     StatusSnapshot.Pane(
                         id: SessionPersistence.shortID(for: surface.id),
-                        title: registry.title(for: surface) ?? surface.lastTitle,
+                        title: displayTitle(for: surface),
                         cwd: registry.workingDirectory(for: surface) ?? surface.workingDir,
-                        tool: foregroundBySurface[surface.id],
+                        tool: foregroundBySurface[surface.id].flatMap { $0.isEmpty ? nil : $0 },
                         agentStatus: agentDetector.state(for: surface.id).status?.rawValue,
                         isFocused: isActiveTab && surface.id == tree.focusedSurfaceID
                     )
@@ -675,7 +764,7 @@ final class TerminalViewController: NSViewController {
                 let title = TabTitle.display(
                     manualTitle: tree.manualTitle,
                     agentName: agentDisplayName(for: tree.focusedSurface),
-                    focusedSurfaceTitle: tree.focusedSurface.flatMap { registry.title(for: $0) ?? $0.lastTitle },
+                    focusedSurfaceTitle: displayTitle(for: tree.focusedSurface),
                     workingDir: tree.focusedSurface?.workingDir,
                     index: tIdx
                 )
@@ -868,6 +957,50 @@ final class TerminalViewController: NSViewController {
         return nil
     }
 
+    // MARK: - Open in editor (status bar)
+
+    private func focusedDirectoryURL() -> URL {
+        let focused = paneTree.focusedSurface
+        let path = focused.flatMap { registry.workingDirectory(for: $0) }
+            ?? focused?.workingDir
+            ?? NSHomeDirectory()
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
+
+    /// The "Open" picker: installed editors + Reveal in Finder. Nothing
+    /// happens until an item is selected.
+    private func showEditorMenu(from anchor: NSView) {
+        let menu = NSMenu()
+        for app in EditorCatalog.installed() {
+            let item = NSMenuItem(title: EditorCatalog.displayName(of: app),
+                                  action: #selector(editorMenuPicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.image = EditorCatalog.icon(for: app, size: 16)
+            item.representedObject = app
+            menu.addItem(item)
+        }
+        menu.addItem(.separator())
+        let finder = NSMenuItem(title: "Finder",
+                                action: #selector(revealFocusedInFinder(_:)), keyEquivalent: "")
+        finder.target = self
+        if let finderApp = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") {
+            finder.image = EditorCatalog.icon(for: finderApp, size: 16)
+        }
+        menu.addItem(finder)
+        // Anchor above the pill (the status bar sits at the window bottom).
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchor)
+    }
+
+    @objc private func editorMenuPicked(_ sender: NSMenuItem) {
+        guard let app = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.open([focusedDirectoryURL()], withApplicationAt: app,
+                                configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    @objc private func revealFocusedInFinder(_ sender: Any?) {
+        NSWorkspace.shared.activateFileViewerSelecting([focusedDirectoryURL()])
+    }
+
     /// Surfaces already given their post-reattach repaint nudge.
     private var nudgedSurfaces: Set<UUID> = []
 
@@ -900,6 +1033,31 @@ final class TerminalViewController: NSViewController {
             }
         }
         return nil
+    }
+
+    /// Panes whose last emitted title outlived the tool that emitted it (the
+    /// probe saw them go idle). Their titles are suppressed — the tab shows
+    /// the directory instead — until the terminal emits a fresh title.
+    private var staleTitleSurfaces: Set<UUID> = []
+
+    private func markTitleStale(_ surfaceID: UUID) {
+        staleTitleSurfaces.insert(surfaceID)
+        // Clear the persisted copy too, or a relaunch would reseed the stale
+        // name (the probe would re-mark it, but only after the first poll).
+        for project in workspace.projects
+        where project.tabList.updateSurface(surfaceID, { $0.lastTitle = nil }) {
+            break
+        }
+    }
+
+    /// The pane's display title: live terminal title, falling back to the
+    /// persisted one — unless the title is known-stale (tool exited).
+    private func displayTitle(for surface: Surface?) -> String? {
+        guard let surface else { return nil }
+        guard !staleTitleSurfaces.contains(surface.id) else {
+            return registry.title(for: surface)   // only a FRESH live title counts
+        }
+        return registry.title(for: surface) ?? surface.lastTitle
     }
 
     /// Writes the live terminal title through to the persisted model, so tab
@@ -937,7 +1095,7 @@ final class TerminalViewController: NSViewController {
         let titles: [String] = tabList.trees.indices.map { idx in
             let tree = tabList.trees[idx]
             let focusedSurface = tree.focusedSurface
-            let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) ?? $0.lastTitle }
+            let surfaceTitle = displayTitle(for: focusedSurface)
             let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
                 ?? focusedSurface?.workingDir
             // A bundled logo replaces the name prefix; otherwise the name is
@@ -976,7 +1134,7 @@ final class TerminalViewController: NSViewController {
                 tabTitles = trees.indices.map { idx in
                     let tree = trees[idx]
                     let focusedSurface = tree.focusedSurface
-                    let surfaceTitle = focusedSurface.flatMap { registry.title(for: $0) ?? $0.lastTitle }
+                    let surfaceTitle = displayTitle(for: focusedSurface)
                     let workingDir = focusedSurface.flatMap { registry.workingDirectory(for: $0) }
                         ?? focusedSurface?.workingDir
                     // Same rule as the tab bar: a logo replaces the name prefix.
@@ -996,12 +1154,16 @@ final class TerminalViewController: NSViewController {
                 tabTitles = []
                 tabStatuses = []
             }
+            // Single-tab projects carry their pane's tool logo on the row
+            // itself (there are no tab child rows to show it on).
+            let projectIcon = trees.count == 1 ? agentIcon(for: trees[0].focusedSurface) : nil
             return SidebarProject(
                 name: project.name,
                 isPinned: project.isPinned,
                 tabTitles: tabTitles,
                 tabStatuses: tabStatuses,
                 tabIcons: tabIcons,
+                icon: projectIcon,
                 status: rollup
             )
         }

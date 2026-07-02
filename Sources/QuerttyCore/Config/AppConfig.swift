@@ -49,6 +49,13 @@ public struct AppConfig: Equatable, Sendable {
     /// When true (default), quitting asks for confirmation first; when false
     /// the app quits immediately.
     public var confirmQuit: Bool
+    /// Attention sound when an agent needs attention.
+    public var notifySound: Bool
+    /// Dock badge showing the count of panes needing attention.
+    public var notifyBadge: Bool
+    /// macOS Notification Center alerts when an agent needs attention and
+    /// quertty is in the background.
+    public var notifySystem: Bool
     /// Raw ghostty directives (from `ghostty.<key> = <value>` lines), forwarded
     /// to the terminal unchanged.
     public var ghostty: [GhosttyDirective]
@@ -63,6 +70,9 @@ public struct AppConfig: Equatable, Sendable {
         editor: String? = nil,
         preserveSessions: Bool = false,
         confirmQuit: Bool = true,
+        notifySound: Bool = true,
+        notifyBadge: Bool = true,
+        notifySystem: Bool = true,
         ghostty: [GhosttyDirective] = []
     ) {
         self.appearance = appearance
@@ -71,6 +81,9 @@ public struct AppConfig: Equatable, Sendable {
         self.editor = editor
         self.preserveSessions = preserveSessions
         self.confirmQuit = confirmQuit
+        self.notifySound = notifySound
+        self.notifyBadge = notifyBadge
+        self.notifySystem = notifySystem
         self.ghostty = ghostty
     }
 
@@ -115,6 +128,12 @@ public struct AppConfig: Equatable, Sendable {
                 config.preserveSessions = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "confirm-quit":
                 config.confirmQuit = ["true", "yes", "on", "1"].contains(value.lowercased())
+            case "notify-sound":
+                config.notifySound = ["true", "yes", "on", "1"].contains(value.lowercased())
+            case "notify-badge":
+                config.notifyBadge = ["true", "yes", "on", "1"].contains(value.lowercased())
+            case "notify-system":
+                config.notifySystem = ["true", "yes", "on", "1"].contains(value.lowercased())
             default:
                 // Anything else is a pasted ghostty directive → forward verbatim.
                 config.ghostty.append(GhosttyDirective(key: rawKey, value: value))
@@ -148,6 +167,12 @@ public struct AppConfig: Equatable, Sendable {
 
         # Ask for confirmation before quitting (false quits immediately).
         confirm-quit = \(confirmQuit)
+
+        # Agent needs-attention alerts: sound, Dock badge (attention-pane count),
+        # and macOS Notification Center (fires only while quertty is in background).
+        notify-sound  = \(notifySound)
+        notify-badge  = \(notifyBadge)
+        notify-system = \(notifySystem)
 
         """
         if let editor, !editor.isEmpty {
@@ -196,6 +221,12 @@ public struct AppConfig: Equatable, Sendable {
 
     # Ask for confirmation before quitting (false quits immediately).
     confirm-quit = true
+
+    # Agent needs-attention alerts: sound, Dock badge (attention-pane count),
+    # and macOS Notification Center (fires only while quertty is in background).
+    notify-sound  = true
+    notify-badge  = true
+    notify-system = true
 
     # Paste your ghostty config below — any non-quertty key is forwarded to the
     # terminal verbatim, so an existing ghostty config works as-is. For example:

@@ -18,6 +18,9 @@ final class StatusBarView: NSView {
     var onSelectAppearance: ((AppearanceMode) -> Void)?
     /// Selects a color scheme (within the current axis) from the status-bar menu.
     var onSelectScheme: ((QColorScheme) -> Void)?
+    /// Shows the "Open in…" picker (editors + Finder); opening happens only
+    /// when an item is selected. The anchor view positions the menu.
+    var onShowEditorMenu: ((NSView) -> Void)?
 
     private let topBorder = NSView()
 
@@ -32,7 +35,9 @@ final class StatusBarView: NSView {
     // Center: working directory.
     private let cwdLabel = NSTextField(labelWithString: "")
 
-    // Right: appearance · scheme · shell · libghostty.
+    // Right: "Open ▾" pill · appearance · scheme · shell · libghostty.
+    private let editorPill = NSView()
+    private let editorButton = NSButton()
     private let appearanceButton = NSButton()
     private let sep0 = NSTextField(labelWithString: "·")
     private let schemeDot = NSView()
@@ -80,9 +85,31 @@ final class StatusBarView: NSView {
         appearanceButton.imagePosition = .imageLeading
         appearanceButton.imageHugsTitle = true
         configureSwitch(schemeButton, action: #selector(schemeClicked))
+        // "Open ▾" — a bordered pill (bg2 surface) so it reads as a button,
+        // not another status field. Clicking shows the Open-in picker; the
+        // action happens only on selection.
+        configureSwitch(editorButton, action: #selector(editorClicked))
+        editorButton.imagePosition = .imageTrailing
+        editorButton.imageHugsTitle = true
+        if #available(macOS 11.0, *) {
+            editorButton.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: "Open in…")?
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 8, weight: .semibold))
+        }
+        editorPill.wantsLayer = true
+        editorPill.layer?.cornerRadius = 10
+        editorPill.layer?.borderWidth = 1
+        editorPill.translatesAutoresizingMaskIntoConstraints = false
+        editorPill.addSubview(editorButton)
+        NSLayoutConstraint.activate([
+            editorPill.heightAnchor.constraint(equalToConstant: 20),
+            editorButton.leadingAnchor.constraint(equalTo: editorPill.leadingAnchor, constant: 9),
+            editorButton.trailingAnchor.constraint(equalTo: editorPill.trailingAnchor, constant: -8),
+            editorButton.centerYAnchor.constraint(equalTo: editorPill.centerYAnchor),
+        ])
 
         configureStack(leftStack, views: [branchIcon, branchLabel, aheadLabel, behindLabel, changesLabel])
-        configureStack(rightStack, views: [appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel])
+        configureStack(rightStack, views: [editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel])
+        rightStack.setCustomSpacing(10, after: editorPill)
 
         addSubview(topBorder)
         addSubview(leftStack)
@@ -189,6 +216,10 @@ final class StatusBarView: NSView {
         onSelectScheme?(scheme)
     }
 
+    @objc private func editorClicked() {
+        onShowEditorMenu?(editorPill)
+    }
+
     // MARK: - Content
 
     func update(cwd: String, appearance: String, scheme: String, shell: String, ghostty: String) {
@@ -236,6 +267,17 @@ final class StatusBarView: NSView {
         sep0.textColor = theme.fg3Color
         sep1.textColor = theme.fg3Color
         sep2.textColor = theme.fg3Color
+        editorPill.layer?.backgroundColor = theme.bg2Color.cgColor
+        editorPill.layer?.borderColor = theme.borderColor.cgColor
+        editorButton.contentTintColor = theme.fg2Color
+        editorButton.attributedTitle = NSAttributedString(
+            string: "Open ",
+            attributes: [
+                .font: QTheme.monoFont(size: 11, weight: .medium),
+                .foregroundColor: theme.fgColor,
+            ]
+        )
+        editorButton.toolTip = "Open the focused pane's directory in an editor or Finder"
 
         styleAppearanceButton()
         styleSchemeButton(schemeButton.title)

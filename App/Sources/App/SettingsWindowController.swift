@@ -19,6 +19,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // Behavior section controls.
     private let confirmQuitSwitch = NSSwitch()
+    private let notifySoundSwitch = NSSwitch()
+    private let notifyBadgeSwitch = NSSwitch()
+    private let notifySystemSwitch = NSSwitch()
 
     // Command Line section controls.
     private let cliStatusLabel = NSTextField(labelWithString: "")
@@ -45,7 +48,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         self.installer = installer
         self.liveSurfaceIDs = liveSurfaceIDs
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 500, height: 450),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
@@ -77,25 +80,67 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Content
 
+    /// The tab view hosting the settings panes (kept for reselect-on-rebuild).
+    private var tabView: NSTabView?
+
     private func buildContent() -> NSView {
         let root = NSView()
         root.wantsLayer = true
         root.layer?.backgroundColor = QTheme.current.bg1Color.cgColor
 
+        let tabs = NSTabView()
+        tabs.translatesAutoresizingMaskIntoConstraints = false
+        tabs.addTabViewItem(tabItem("General", buildGeneralTab()))
+        tabs.addTabViewItem(tabItem("Appearance", buildAppearanceTab()))
+        tabs.addTabViewItem(tabItem("Sessions", buildSessionsTab()))
+        tabs.addTabViewItem(tabItem("Agents", buildAgentsTab()))
+        root.addSubview(tabs)
+        NSLayoutConstraint.activate([
+            tabs.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
+            tabs.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            tabs.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            tabs.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
+        ])
+        tabView = tabs
+        refresh()
+        return root
+    }
+
+    private func tabItem(_ label: String, _ content: NSView) -> NSTabViewItem {
+        let container = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.topAnchor.constraint(equalTo: container.topAnchor, constant: 14),
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
+            content.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -14),
+        ])
+        let item = NSTabViewItem()
+        item.label = label
+        item.view = container
+        return item
+    }
+
+    private func sectionStack() -> NSStackView {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 20),
-            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 20),
-            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -20),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -20),
-        ])
+        return stack
+    }
 
-        // Configuration section.
+    private func addFullWidth(_ row: NSView, to stack: NSStackView) {
+        stack.addArrangedSubview(row)
+        row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    }
+
+    // MARK: Tabs
+
+    /// General: config file + editor, quit behavior, CLI install.
+    private func buildGeneralTab() -> NSView {
+        let stack = sectionStack()
+
         stack.addArrangedSubview(sectionHeader("Configuration"))
         stack.addArrangedSubview(caption(abbreviatedConfigPath()))
         stack.addArrangedSubview(caption(
@@ -117,41 +162,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         stack.addArrangedSubview(editorRow)
         populateEditorPopup()
 
-        // Appearance section.
-        stack.addArrangedSubview(spacer())
-        stack.addArrangedSubview(sectionHeader("Appearance"))
-        appearancePopup.removeAllItems()
-        appearancePopup.addItems(withTitles: AppearanceMode.allCases.map { $0.rawValue.capitalized })
-        appearancePopup.target = self
-        appearancePopup.action = #selector(appearancePicked(_:))
-        darkThemePopup.removeAllItems()
-        darkThemePopup.addItems(withTitles: QColorScheme.darkSchemes.map(\.displayName))
-        darkThemePopup.target = self
-        darkThemePopup.action = #selector(darkThemePicked(_:))
-        lightThemePopup.removeAllItems()
-        lightThemePopup.addItems(withTitles: QColorScheme.lightSchemes.map(\.displayName))
-        lightThemePopup.target = self
-        lightThemePopup.action = #selector(lightThemePicked(_:))
-        for (title, popup) in [
-            ("Appearance", appearancePopup),
-            ("Dark theme", darkThemePopup),
-            ("Light theme", lightThemePopup),
-        ] {
-            let row = popupRow(title, popup: popup)
-            stack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        }
-
-        // Behavior section.
         stack.addArrangedSubview(spacer())
         stack.addArrangedSubview(sectionHeader("Behavior"))
         confirmQuitSwitch.target = self
         confirmQuitSwitch.action = #selector(confirmQuitToggled(_:))
-        let confirmRow = switchRow("Confirm before quitting", control: confirmQuitSwitch)
-        stack.addArrangedSubview(confirmRow)
-        confirmRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        addFullWidth(switchRow("Confirm before quitting", control: confirmQuitSwitch), to: stack)
 
-        // Command Line section.
         stack.addArrangedSubview(spacer())
         stack.addArrangedSubview(sectionHeader("Command Line"))
         stack.addArrangedSubview(caption(
@@ -167,34 +183,48 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         cliInstallButton.action = #selector(installCLI(_:))
         stack.addArrangedSubview(cliInstallButton)
 
-        // Sessions section.
-        stack.addArrangedSubview(spacer())
-        stack.addArrangedSubview(sectionHeader("Sessions"))
+        return stack
+    }
+
+    /// Appearance: mode + per-axis theme pickers.
+    private func buildAppearanceTab() -> NSView {
+        let stack = sectionStack()
+        appearancePopup.removeAllItems()
+        appearancePopup.addItems(withTitles: AppearanceMode.allCases.map { $0.rawValue.capitalized })
+        appearancePopup.target = self
+        appearancePopup.action = #selector(appearancePicked(_:))
+        darkThemePopup.removeAllItems()
+        darkThemePopup.addItems(withTitles: QColorScheme.darkSchemes.map(\.displayName))
+        darkThemePopup.target = self
+        darkThemePopup.action = #selector(darkThemePicked(_:))
+        lightThemePopup.removeAllItems()
+        lightThemePopup.addItems(withTitles: QColorScheme.lightSchemes.map(\.displayName))
+        lightThemePopup.target = self
+        lightThemePopup.action = #selector(lightThemePicked(_:))
+        stack.addArrangedSubview(caption(
+            "System follows macOS and switches between the dark and light theme live; "
+            + "Dark/Light pin one axis."
+        ))
+        for (title, popup) in [
+            ("Appearance", appearancePopup),
+            ("Dark theme", darkThemePopup),
+            ("Light theme", lightThemePopup),
+        ] {
+            addFullWidth(popupRow(title, popup: popup), to: stack)
+        }
+        return stack
+    }
+
+    /// Sessions: zmx-backed preservation + orphan cleanup.
+    private func buildSessionsTab() -> NSView {
+        let stack = sectionStack()
         stack.addArrangedSubview(caption(
             "Keep terminal sessions running when quertty quits, and reattach them on relaunch. Powered by zmx.",
             link: "zmx", url: "https://github.com/neurosnap/zmx"
         ))
-
-        let preserveRow = NSView()
-        preserveRow.translatesAutoresizingMaskIntoConstraints = false
-        let preserveLabel = NSTextField(labelWithString: "Preserve sessions")
-        preserveLabel.font = QTheme.monoFont(size: 13, weight: .medium)
-        preserveLabel.textColor = QTheme.current.fgColor
-        preserveLabel.translatesAutoresizingMaskIntoConstraints = false
         preserveSwitch.target = self
         preserveSwitch.action = #selector(preserveToggled(_:))
-        preserveSwitch.translatesAutoresizingMaskIntoConstraints = false
-        preserveRow.addSubview(preserveLabel)
-        preserveRow.addSubview(preserveSwitch)
-        NSLayoutConstraint.activate([
-            preserveRow.heightAnchor.constraint(equalToConstant: 28),
-            preserveLabel.leadingAnchor.constraint(equalTo: preserveRow.leadingAnchor),
-            preserveLabel.centerYAnchor.constraint(equalTo: preserveRow.centerYAnchor),
-            preserveSwitch.trailingAnchor.constraint(equalTo: preserveRow.trailingAnchor),
-            preserveSwitch.centerYAnchor.constraint(equalTo: preserveRow.centerYAnchor),
-        ])
-        stack.addArrangedSubview(preserveRow)
-        preserveRow.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        addFullWidth(switchRow("Preserve sessions", control: preserveSwitch), to: stack)
 
         sessionStatusLabel.font = QTheme.monoFont(size: 11)
         sessionStatusLabel.textColor = QTheme.current.fg3Color
@@ -205,24 +235,41 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         orphanButton.action = #selector(killOrphans(_:))
         orphanButton.isHidden = true
         stack.addArrangedSubview(orphanButton)
+        return stack
+    }
+
+    /// Agents: attention notifications + per-harness status hooks.
+    private func buildAgentsTab() -> NSView {
+        let stack = sectionStack()
+
+        stack.addArrangedSubview(sectionHeader("Notifications"))
+        stack.addArrangedSubview(caption(
+            "When an agent needs attention. The badge shows the attention-pane "
+            + "count; macOS notifications fire only while quertty is in the background."
+        ))
+        notifySoundSwitch.target = self
+        notifySoundSwitch.action = #selector(notifySoundToggled(_:))
+        addFullWidth(switchRow("Attention sound", control: notifySoundSwitch), to: stack)
+        notifyBadgeSwitch.target = self
+        notifyBadgeSwitch.action = #selector(notifyBadgeToggled(_:))
+        addFullWidth(switchRow("Dock badge", control: notifyBadgeSwitch), to: stack)
+        notifySystemSwitch.target = self
+        notifySystemSwitch.action = #selector(notifySystemToggled(_:))
+        addFullWidth(switchRow("macOS notifications", control: notifySystemSwitch), to: stack)
 
         stack.addArrangedSubview(spacer())
-        stack.addArrangedSubview(sectionHeader("Agent Status Hooks"))
+        stack.addArrangedSubview(sectionHeader("Status Hooks"))
         stack.addArrangedSubview(caption(
             "Install a hook so the harness reports agent status to quertty. "
             + "Status shows as sidebar dots — green running, yellow needs-attention, dim idle."
         ))
-
         for harness in Harness.allCases {
             let (row, control) = harnessRow(harness)
             switches.append((harness, control))
-            stack.addArrangedSubview(row)
-            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+            addFullWidth(row, to: stack)
         }
-
         stack.addArrangedSubview(caption("Restart the agent after enabling for the hook to take effect."))
-        refresh()
-        return root
+        return stack
     }
 
     /// A justified label + switch row (same anatomy as the harness rows).
@@ -311,12 +358,18 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     /// Re-themes this window after an appearance/scheme change made from it:
     /// token colors are baked into the labels at build time, so the content is
-    /// rebuilt against the new palette.
+    /// rebuilt against the new palette (staying on the same tab).
     private func rebuildAfterThemeChange() {
+        let selectedIndex = tabView.flatMap { tabs in
+            tabs.selectedTabViewItem.map(tabs.indexOfTabViewItem)
+        }
         switches.removeAll()
         window?.appearance = QTheme.current.appearance
         window?.backgroundColor = QTheme.current.bg1Color
         window?.contentView = buildContent()
+        if let selectedIndex, selectedIndex != NSNotFound {
+            tabView?.selectTabViewItem(at: selectedIndex)
+        }
     }
 
     private func harnessRow(_ harness: Harness) -> (NSView, NSSwitch) {
@@ -401,6 +454,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let config = ConfigStore(fileURL: configURL).load()
         preserveSwitch.state = config.preserveSessions ? .on : .off
         confirmQuitSwitch.state = config.confirmQuit ? .on : .off
+        notifySoundSwitch.state = config.notifySound ? .on : .off
+        notifyBadgeSwitch.state = config.notifyBadge ? .on : .off
+        notifySystemSwitch.state = config.notifySystem ? .on : .off
 
         // Which zmx binary backs the feature is an implementation detail; the
         // status line only appears when zmx is missing, to explain the toggle.
@@ -520,6 +576,27 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         store.save(config)
     }
 
+    @objc private func notifySoundToggled(_ sender: NSSwitch) {
+        let store = ConfigStore(fileURL: configURL)
+        var config = store.load()
+        config.notifySound = sender.state == .on
+        store.save(config)
+    }
+
+    @objc private func notifyBadgeToggled(_ sender: NSSwitch) {
+        let store = ConfigStore(fileURL: configURL)
+        var config = store.load()
+        config.notifyBadge = sender.state == .on
+        store.save(config)
+    }
+
+    @objc private func notifySystemToggled(_ sender: NSSwitch) {
+        let store = ConfigStore(fileURL: configURL)
+        var config = store.load()
+        config.notifySystem = sender.state == .on
+        store.save(config)
+    }
+
     @objc private func killOrphans(_ sender: Any?) {
         guard let zmx = ZmxRunner.locate(), !orphanSessions.isEmpty else { return }
         ZmxRunner.kill(sessions: orphanSessions, zmxPath: zmx)
@@ -532,62 +609,35 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Editor picker
 
-    /// Curated roster of popular editors (bundle ids). The dropdown shows the
-    /// intersection of this list with what's installed — apps like browsers that
-    /// merely *register* for text files stay out. The `editor` config key remains
-    /// the escape hatch for anything not listed.
-    private static let knownEditors: [String] = [
-        "dev.zed.Zed",                       // Zed
-        "com.microsoft.VSCode",              // Visual Studio Code
-        "com.todesktop.230313mzl4w4u92",     // Cursor
-        "com.exafunction.windsurf",          // Windsurf
-        "com.sublimetext.4",                 // Sublime Text 4
-        "com.sublimetext.3",                 // Sublime Text 3
-        "com.barebones.bbedit",              // BBEdit
-        "com.macromates.TextMate",           // TextMate
-        "com.panic.Nova",                    // Nova
-        "com.jetbrains.fleet",               // Fleet
-        "com.apple.dt.Xcode",                // Xcode
-        "com.apple.TextEdit",                // TextEdit
-    ]
-
-    /// Fills the dropdown with the installed subset of `knownEditors` and
-    /// selects the config's current `editor` (appending it if it's something
-    /// off-roster, so a hand-set value still shows).
+    /// Fills the dropdown with the installed editors (EditorCatalog roster)
+    /// and selects the config's current `editor` (appending it if it's
+    /// something off-roster, so a hand-set value still shows).
     private func populateEditorPopup() {
-        var seen = Set<String>()
-        editorApps = Self.knownEditors
-            .compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }
-            .filter { seen.insert($0.deletingPathExtension().lastPathComponent.lowercased()).inserted }
+        editorApps = EditorCatalog.installed()
 
         let current = ConfigStore(fileURL: configURL).load().editor?
             .trimmingCharacters(in: .whitespaces) ?? ""
 
         // A hand-configured editor outside the roster still gets an entry.
         if !current.isEmpty,
-           !editorApps.contains(where: { Self.matches($0, editor: current) }),
-           let url = Self.resolveEditor(current) {
+           !editorApps.contains(where: { EditorCatalog.matches($0, editor: current) }),
+           let url = EditorCatalog.resolve(current) {
             editorApps.append(url)
         }
 
         editorPopup.removeAllItems()
         editorPopup.addItem(withTitle: "System Default")
         for url in editorApps {
-            editorPopup.addItem(withTitle: url.deletingPathExtension().lastPathComponent)
+            editorPopup.addItem(withTitle: EditorCatalog.displayName(of: url))
+            editorPopup.lastItem?.image = EditorCatalog.icon(for: url, size: 16)
         }
 
         if !current.isEmpty,
-           let index = editorApps.firstIndex(where: { Self.matches($0, editor: current) }) {
+           let index = editorApps.firstIndex(where: { EditorCatalog.matches($0, editor: current) }) {
             editorPopup.selectItem(at: index + 1)
         } else {
             editorPopup.selectItem(at: 0)
         }
-    }
-
-    /// True if the app at `url` is the one the `editor` value names.
-    private static func matches(_ url: URL, editor: String) -> Bool {
-        url.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(editor) == .orderedSame
-            || Bundle(url: url)?.bundleIdentifier?.caseInsensitiveCompare(editor) == .orderedSame
     }
 
     /// Persists the picked editor to the config (`nil` for System Default).
@@ -597,7 +647,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let index = sender.indexOfSelectedItem
         config.editor = index <= 0 || index > editorApps.count
             ? nil
-            : editorApps[index - 1].deletingPathExtension().lastPathComponent
+            : EditorCatalog.displayName(of: editorApps[index - 1])
         store.save(config)
     }
 
@@ -609,32 +659,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     @objc private func openConfig(_ sender: Any?) {
         let store = ConfigStore(fileURL: configURL)
         store.writeDefaultIfMissing()
-        if let editor = store.load().editor, let appURL = Self.resolveEditor(editor) {
+        if let editor = store.load().editor, let appURL = EditorCatalog.resolve(editor) {
             NSWorkspace.shared.open([configURL], withApplicationAt: appURL,
                                     configuration: NSWorkspace.OpenConfiguration())
         } else {
             NSWorkspace.shared.open(configURL)
         }
-    }
-
-    /// Resolves an `editor` value to an app URL: bundle id first, then an app
-    /// name looked up in the standard Applications folders.
-    private static func resolveEditor(_ editor: String) -> URL? {
-        let trimmed = editor.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return nil }
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: trimmed) {
-            return url
-        }
-        let name = trimmed.hasSuffix(".app") ? trimmed : trimmed + ".app"
-        let candidates = [
-            "/Applications/\(name)",
-            "\(NSHomeDirectory())/Applications/\(name)",
-            "/System/Applications/\(name)",
-        ]
-        for path in candidates where FileManager.default.fileExists(atPath: path) {
-            return URL(fileURLWithPath: path)
-        }
-        return nil
     }
 
     @objc private func switchToggled(_ sender: NSSwitch) {
