@@ -1,7 +1,7 @@
 import Testing
 @testable import ZettyCore
 
-private let script = "/Users/me/.quertty/hooks/quertty-hook.py"
+private let script = "/Users/me/.zetty/hooks/zetty-hook.py"
 
 // MARK: - Claude
 

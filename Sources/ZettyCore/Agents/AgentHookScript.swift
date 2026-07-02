@@ -1,13 +1,13 @@
 import Foundation
 
-/// The shared hook helper quertty installs at `~/.quertty/hooks/quertty-hook.py`.
+/// The shared hook helper Zetty installs at `~/.zetty/hooks/zetty-hook.py`.
 ///
 /// Written in Python (reliably present; Claude/Hermes/Codex all run in
 /// Python-capable environments) so it can robustly read `cwd` from the harness's
 /// JSON payload. Two invocation modes:
 ///
-///   quertty-hook.py emit <agent> <event>       # Claude & Hermes: cwd from stdin JSON
-///   quertty-hook.py codex <original-notify...>  # Codex: cwd from its JSON (last arg),
+///   zetty-hook.py emit <agent> <event>       # Claude & Hermes: cwd from stdin JSON
+///   zetty-hook.py codex <original-notify...>  # Codex: cwd from its JSON (last arg),
 ///                                               # then chains to the wrapped notify program
 public enum AgentHookScript {
     public static let fileName = "zetty-hook.py"

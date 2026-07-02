@@ -63,9 +63,9 @@ private let psSample = """
 }
 
 @Test func zmxListPIDsParse() {
-    let list = "  name=quertty-abc\tpid=123\tclients=1\tcreated=1782977929\tstart_dir=/x\n"
+    let list = "  name=zetty-abc\tpid=123\tclients=1\tcreated=1782977929\tstart_dir=/x\n"
         + "  name=supa-zzz\tpid=456\tclients=1\tcreated=1\tstart_dir=/y\tcmd=/usr/bin/login -flp u\n"
     let pids = SessionPersistence.sessionPIDs(fromList: list)
-    #expect(pids["quertty-abc"] == 123)
+    #expect(pids["zetty-abc"] == 123)
     #expect(pids["supa-zzz"] == 456)
 }

@@ -127,7 +127,7 @@ final class TerminalViewController: NSViewController {
     var ghosttyConfiguration: TerminalConfiguration?
 
     /// When set, new panes launch this command instead of the default shell
-    /// (session preservation: `zmx attach quertty-<id>`). Affects NEW panes only.
+    /// (session preservation: `zmx attach zetty-<id>`). Affects NEW panes only.
     var sessionCommandProvider: ((UUID) -> String?)? {
         didSet {
             registry.surfaceCommand = sessionCommandProvider.map { provider in

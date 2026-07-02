@@ -42,7 +42,7 @@ import Foundation
 
 @Test func controlResponseCarriesStatusSnapshot() throws {
     let snapshot = StatusSnapshot(projects: [
-        .init(name: "quertty", isActive: true, tabs: [
+        .init(name: "zetty", isActive: true, tabs: [
             .init(title: "claude", isActive: true, panes: [
                 .init(id: "abcd1234", title: "✳ Claude Code", cwd: "/x", tool: "claude", agentStatus: "running", isFocused: true),
             ]),

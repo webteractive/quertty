@@ -4,7 +4,7 @@ import Foundation
 
 private func tempDir() throws -> URL {
     let url = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("quertty-tests-\(UUID().uuidString)")
+        .appendingPathComponent("zetty-tests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }

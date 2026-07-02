@@ -108,7 +108,7 @@ public final class SurfaceRegistry {
     public var terminalConfiguration: TerminalConfiguration?
 
     /// When set, supplies the ghostty `command` a surface's pane should launch
-    /// instead of the default shell (e.g. `zmx attach quertty-xxxx` for session
+    /// instead of the default shell (e.g. `zmx attach zetty-xxxx` for session
     /// preservation). Consulted once, at surface creation; nil → default shell.
     public var surfaceCommand: ((Surface) -> String?)?
 

@@ -91,7 +91,7 @@ import Testing
 
 @Test func configStoreSeedsAndReloadsFromDisk() throws {
     let tmp = FileManager.default.temporaryDirectory
-        .appendingPathComponent("quertty-config-test-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("zetty-config-test-\(UUID().uuidString)", isDirectory: true)
         .appendingPathComponent("config")
     defer { try? FileManager.default.removeItem(at: tmp.deletingLastPathComponent()) }
 
@@ -112,7 +112,7 @@ import Testing
 
 @Test func configStoreSavesAndReloadsRoundTrip() {
     let tmp = FileManager.default.temporaryDirectory
-        .appendingPathComponent("quertty-config-save-\(UUID().uuidString)", isDirectory: true)
+        .appendingPathComponent("zetty-config-save-\(UUID().uuidString)", isDirectory: true)
         .appendingPathComponent("config")
     defer { try? FileManager.default.removeItem(at: tmp.deletingLastPathComponent()) }
 

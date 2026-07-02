@@ -2,7 +2,7 @@ import Foundation
 
 /// Pure install/uninstall transforms for Hermes hooks in `~/.hermes/config.yaml`.
 ///
-/// Without a YAML parser we manage a clearly-marked, quertty-owned block. It
+/// Without a YAML parser we manage a clearly-marked, Zetty-owned block. It
 /// carries its own top-level `hooks:` key, so it can only be appended when the
 /// file has no other top-level `hooks:` — otherwise we'd create a duplicate key.
 /// In that case install reports `.conflict` and the app falls back to showing

@@ -6,7 +6,7 @@ import Foundation
 
 private func tempDir() throws -> URL {
     let url = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("quertty-session-\(UUID().uuidString)")
+        .appendingPathComponent("zetty-session-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }

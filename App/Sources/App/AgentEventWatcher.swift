@@ -1,7 +1,7 @@
 import Foundation
 import ZettyCore
 
-/// Tails the agent-event sink (`~/.quertty/agent-events.jsonl`) that harness
+/// Tails the agent-event sink (`~/.zetty/agent-events.jsonl`) that harness
 /// hooks append to, parsing newly-appended lines into `AgentEvent`s.
 ///
 /// Like `ConfigFileWatcher`, this is a lightweight poll on the main run loop, so

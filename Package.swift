@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .library(name: "ZettyCore", targets: ["ZettyCore"]),
-        // The `quertty` control CLI (talks to the app over ~/.quertty/quertty.sock).
+        // The `zetty` control CLI (talks to the app over ~/.zetty/zetty.sock).
         .executable(name: "zetty", targets: ["ZettyCLI"]),
     ],
     dependencies: [

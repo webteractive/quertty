@@ -495,10 +495,10 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return
         }
 
-        // zmx missing: offer to download the release binary into ~/.quertty/bin.
+        // zmx missing: offer to download the release binary into ~/.zetty/bin.
         let alert = NSAlert()
         alert.messageText = "Session preservation requires zmx"
-        alert.informativeText = "Download zmx \(ZmxRunner.version) from zmx.sh now? It installs into ~/.quertty/bin — nothing else is touched."
+        alert.informativeText = "Download zmx \(ZmxRunner.version) from zmx.sh now? It installs into ~/.zetty/bin — nothing else is touched."
         alert.addButton(withTitle: "Install")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else {
@@ -540,7 +540,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/bin/zetty")
     }
 
-    /// Syncs the CLI install state (symlink at ~/.local/bin/quertty → this
+    /// Syncs the CLI install state (symlink at ~/.local/bin/zetty → this
     /// build's app binary, which runs in CLI mode when given a command).
     private func refreshCLI() {
         let link = Self.cliLinkURL
@@ -564,11 +564,6 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         try? fm.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? fm.removeItem(at: link)
         try? fm.createSymbolicLink(atPath: link.path, withDestinationPath: executable)
-        // Clean up the pre-rename symlink so a stale `Zetty` doesn't linger.
-        let legacy = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".local/bin/quertty")
-        if (try? FileManager.default.destinationOfSymbolicLink(atPath: legacy.path)) != nil {
-            try? FileManager.default.removeItem(at: legacy)
-        }
         refreshCLI()
     }
 

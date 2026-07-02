@@ -291,7 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Session preservation
 
     /// Threads session preservation into the terminal VC: when enabled and zmx
-    /// is installed, new panes launch `zmx attach quertty-<id>` instead of a
+    /// is installed, new panes launch `zmx attach zetty-<id>` instead of a
     /// bare shell. Affects NEW panes only. Explicitly closed panes always get
     /// their sessions killed when zmx is present (regardless of the toggle, so
     /// closing panes after disabling still cleans up).
@@ -432,7 +432,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var controlSocketServer: ControlSocketServer?
 
-    /// Hosts `~/.quertty/quertty.sock` for the `quertty` CLI: status snapshot,
+    /// Hosts `~/.zetty/zetty.sock` for the `zetty` CLI: status snapshot,
     /// input injection (`send`), and config reload.
     private func startControlSocket() {
         let server = ControlSocketServer { [weak self] request in
