@@ -25,5 +25,9 @@ vendor/**/zig-cache/
 vendor/**/GhosttyKit.xcframework
 vendor/**/.zig-cache/
 
+# Release packaging
+build/
+dist/
+
 # Misc
 *.log
