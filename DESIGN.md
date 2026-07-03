@@ -4,11 +4,11 @@ The visual language for quertty, translated from the Claude Design handoff.
 
 - **Source handoff:** `quertty.dc.html`
 - **Project:** `https://claude.ai/design/p/def4312f-4b6c-41d2-ae44-98d0d130c35b`
-- **Code source of truth:** [`App/Sources/App/Theme.swift`](App/Sources/App/Theme.swift) (`QTheme`)
+- **Code source of truth:** [`App/Sources/App/Theme.swift`](App/Sources/App/Theme.swift) (`ZTheme`)
 
 quertty is a native **AppKit** app, so the handoff is a *visual* spec: its
 tokens, typography, spacing, and component anatomy are translated into AppKit
-styling — we do not render HTML. `QTheme` is the single place those tokens live
+styling — we do not render HTML. `ZTheme` is the single place those tokens live
 in code; every view reads colors and fonts from it.
 
 ---
@@ -61,9 +61,9 @@ same token set — see [Schemes](#schemes).
 
 ## Schemes
 
-Six schemes ship in `QColorScheme`; **Midnight** is the default. Switching sets
-`QTheme.scheme`, which repoints `QTheme.current` and (for the terminal)
-`QTheme.current.terminalTheme()`.
+Six schemes ship in `ZColorScheme`; **Midnight** is the default. Switching sets
+`ZTheme.scheme`, which repoints `ZTheme.current` and (for the terminal)
+`ZTheme.current.terminalTheme()`.
 
 | Scheme     | Lineage           | Accent    | Base bg   | Dark? |
 |------------|-------------------|-----------|-----------|-------|
@@ -82,7 +82,7 @@ chrome/sidebar (`bg0` `#ececed`), and a brand-teal accent that reads on white.
 
 ## Typography
 
-- **Mono:** JetBrains Mono (`QTheme.monoFont(size:weight:)`), falling back to the
+- **Mono:** JetBrains Mono (`ZTheme.monoFont(size:weight:)`), falling back to the
   system monospaced face when JetBrains Mono is not installed. Weights 400–700.
 - **UI/prose:** system font (`NSFont.systemFont`).
 - **Terminal:** JetBrains Mono via `withFontFamily("JetBrains Mono")`.

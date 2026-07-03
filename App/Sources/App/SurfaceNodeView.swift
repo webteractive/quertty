@@ -168,7 +168,7 @@ private final class LeafContainerView: NSView {
         // Rounded, themed pane surface (handoff: 10pt radius panes on bg1).
         layer?.cornerRadius = 8
         layer?.masksToBounds = true
-        layer?.backgroundColor = QTheme.current.bg1Color.cgColor
+        layer?.backgroundColor = ZTheme.current.bg1Color.cgColor
 
         let inset = LeafContainerView.borderWidth
         // Reserve a top gutter for the × when closable so it sits above the
@@ -204,7 +204,7 @@ private final class LeafContainerView: NSView {
     private func updateBorder() {
         // No pane border by design; focus is conveyed by the accent status dot.
         layer?.borderWidth = 0
-        let theme = QTheme.current
+        let theme = ZTheme.current
         statusDot?.layer?.backgroundColor = isFocused
             ? theme.accentColor.cgColor
             : theme.fg3Color.cgColor
@@ -239,7 +239,7 @@ private final class LeafContainerView: NSView {
             button.title = "×"
         }
         button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = QTheme.current.fg3Color
+        button.contentTintColor = ZTheme.current.fg3Color
         button.toolTip = "Close pane"
         button.target = self
         button.action = #selector(closeButtonTapped)

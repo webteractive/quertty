@@ -84,7 +84,7 @@ final class TabBarView: NSView {
         super.init(frame: frameRect)
 
         wantsLayer = true
-        layer?.backgroundColor = QTheme.current.bg0Color.cgColor
+        layer?.backgroundColor = ZTheme.current.bg0Color.cgColor
         styleAddButton()
         styleSidebarButton()
 
@@ -235,13 +235,13 @@ final class TabBarView: NSView {
             .withSymbolConfiguration(config) {
             sidebarButton.image = image
             sidebarButton.imageScaling = .scaleProportionallyUpOrDown
-            sidebarButton.contentTintColor = QTheme.current.fgColor
+            sidebarButton.contentTintColor = ZTheme.current.fgColor
         } else {
             sidebarButton.attributedTitle = NSAttributedString(
                 string: "☰",
                 attributes: [
-                    .font: QTheme.monoFont(size: 15),
-                    .foregroundColor: QTheme.current.fgColor,
+                    .font: ZTheme.monoFont(size: 15),
+                    .foregroundColor: ZTheme.current.fgColor,
                 ]
             )
         }
@@ -253,8 +253,8 @@ final class TabBarView: NSView {
         addButton.attributedTitle = NSAttributedString(
             string: "+",
             attributes: [
-                .font: QTheme.monoFont(size: 15, weight: .regular),
-                .foregroundColor: QTheme.current.fg2Color,
+                .font: ZTheme.monoFont(size: 15, weight: .regular),
+                .foregroundColor: ZTheme.current.fg2Color,
             ]
         )
     }
@@ -262,7 +262,7 @@ final class TabBarView: NSView {
     /// Re-applies the active theme to the bar background and `+` button. Tab
     /// items recolor when the caller reloads via `update(...)`.
     func applyTheme() {
-        layer?.backgroundColor = QTheme.current.bg0Color.cgColor
+        layer?.backgroundColor = ZTheme.current.bg0Color.cgColor
         styleAddButton()
         styleSidebarButton()
     }
@@ -436,14 +436,14 @@ private final class TabItemView: NSView {
         }
         closeButton.isBordered = false
         closeButton.bezelStyle = .inline
-        closeButton.contentTintColor = QTheme.current.fg3Color
+        closeButton.contentTintColor = ZTheme.current.fg3Color
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
         super.init(frame: .zero)
 
         wantsLayer = true
 
-        topBar.backgroundColor = QTheme.current.accentColor.cgColor
+        topBar.backgroundColor = ZTheme.current.accentColor.cgColor
         topBar.cornerRadius = 1
         layer?.addSublayer(topBar)
 
@@ -507,17 +507,17 @@ private final class TabItemView: NSView {
     // MARK: Appearance
 
     private func updateAppearance() {
-        let theme = QTheme.current
+        let theme = ZTheme.current
         if isSelected {
             layer?.backgroundColor = theme.bg1Color.cgColor
             statusDot.layer?.backgroundColor = theme.accentColor.cgColor
-            titleLabel.font = QTheme.monoFont(size: 12.5, weight: .semibold)
+            titleLabel.font = ZTheme.monoFont(size: 12.5, weight: .semibold)
             titleLabel.textColor = theme.fgColor
             topBar.isHidden = false
         } else {
             layer?.backgroundColor = NSColor.clear.cgColor
             statusDot.layer?.backgroundColor = theme.fg3Color.cgColor
-            titleLabel.font = QTheme.monoFont(size: 12.5, weight: .medium)
+            titleLabel.font = ZTheme.monoFont(size: 12.5, weight: .medium)
             titleLabel.textColor = theme.fg2Color
             topBar.isHidden = true
         }

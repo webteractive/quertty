@@ -17,7 +17,7 @@ final class StatusBarView: NSView {
     /// Selects an appearance axis (system / dark / light) from the status-bar menu.
     var onSelectAppearance: ((AppearanceMode) -> Void)?
     /// Selects a color scheme (within the current axis) from the status-bar menu.
-    var onSelectScheme: ((QColorScheme) -> Void)?
+    var onSelectScheme: ((ZColorScheme) -> Void)?
     /// Shows the "Open in…" picker (editors + Finder); opening happens only
     /// when an item is selected. The anchor view positions the menu.
     var onShowEditorMenu: ((NSView) -> Void)?
@@ -188,13 +188,13 @@ final class StatusBarView: NSView {
     /// Pops up a scheme picker for the current axis above the button.
     @objc private func schemeClicked() {
         let menu = NSMenu()
-        let scoped = QTheme.current.isDark ? QColorScheme.darkSchemes : QColorScheme.lightSchemes
+        let scoped = ZTheme.current.isDark ? ZColorScheme.darkSchemes : ZColorScheme.lightSchemes
         for scheme in scoped {
             let item = NSMenuItem(title: scheme.displayName,
                                   action: #selector(pickScheme(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = scheme.rawValue
-            item.state = (scheme == QTheme.scheme) ? .on : .off
+            item.state = (scheme == ZTheme.scheme) ? .on : .off
             menu.addItem(item)
         }
         popUp(menu, from: schemeButton)
@@ -214,7 +214,7 @@ final class StatusBarView: NSView {
 
     @objc private func pickScheme(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String,
-              let scheme = QColorScheme(rawValue: raw) else { return }
+              let scheme = ZColorScheme(rawValue: raw) else { return }
         onSelectScheme?(scheme)
     }
 
@@ -252,13 +252,13 @@ final class StatusBarView: NSView {
     // MARK: - Theme
 
     func applyTheme() {
-        let theme = QTheme.current
+        let theme = ZTheme.current
         layer?.backgroundColor = theme.bg0Color.cgColor
         topBorder.layer?.backgroundColor = theme.borderColor.cgColor
         schemeDot.layer?.backgroundColor = theme.accentColor.cgColor
         branchIcon.contentTintColor = theme.purpleColor
 
-        let font = QTheme.monoFont(size: 11)
+        let font = ZTheme.monoFont(size: 11)
         for label in plainLabels { label.font = font }
 
         cwdLabel.textColor = theme.fg2Color
@@ -279,7 +279,7 @@ final class StatusBarView: NSView {
         editorButton.attributedTitle = NSAttributedString(
             string: "Open ",
             attributes: [
-                .font: QTheme.monoFont(size: 11, weight: .medium),
+                .font: ZTheme.monoFont(size: 11, weight: .medium),
                 .foregroundColor: theme.fgColor,
             ]
         )
@@ -297,12 +297,12 @@ final class StatusBarView: NSView {
         default:      icon = "circle.lefthalf.filled"
         }
         appearanceButton.image = NSImage(systemSymbolName: icon, accessibilityDescription: appearanceMode)
-        appearanceButton.contentTintColor = QTheme.current.fg2Color
+        appearanceButton.contentTintColor = ZTheme.current.fg2Color
         appearanceButton.attributedTitle = NSAttributedString(
             string: " \(appearanceMode)",
             attributes: [
-                .font: QTheme.monoFont(size: 11),
-                .foregroundColor: QTheme.current.fg2Color,
+                .font: ZTheme.monoFont(size: 11),
+                .foregroundColor: ZTheme.current.fg2Color,
             ]
         )
         appearanceButton.toolTip = "Appearance: \(appearanceMode) — click to cycle"
@@ -312,8 +312,8 @@ final class StatusBarView: NSView {
         schemeButton.attributedTitle = NSAttributedString(
             string: name,
             attributes: [
-                .font: QTheme.monoFont(size: 11),
-                .foregroundColor: QTheme.current.accentColor,
+                .font: ZTheme.monoFont(size: 11),
+                .foregroundColor: ZTheme.current.accentColor,
             ]
         )
         schemeButton.toolTip = "Color scheme: \(name) — click to cycle (⇧⌘T)"

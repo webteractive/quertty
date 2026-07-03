@@ -10,7 +10,7 @@ import AppKit
 /// CoreText-ink based: glyph image bounds (not advances) are centered on the
 /// plate, and the `>` is centered on the Z's vertical midline. Pass
 /// `cursorVisible: false` for the blink's "off" frame; the layout doesn't
-/// shift. Call on the main thread (it reads QTheme and uses AppKit drawing).
+/// shift. Call on the main thread (it reads ZTheme and uses AppKit drawing).
 enum AppIconRenderer {
 
     /// Registers the bundled IBM Plex Mono face for this process. Idempotent;
@@ -21,12 +21,12 @@ enum AppIconRenderer {
     }
 
     private static func plexBold(size: CGFloat) -> NSFont {
-        NSFont(name: "IBMPlexMono-Bold", size: size) ?? QTheme.monoFont(size: size, weight: .bold)
+        NSFont(name: "IBMPlexMono-Bold", size: size) ?? ZTheme.monoFont(size: size, weight: .bold)
     }
 
-    /// Draws the icon at Dock resolution using `QTheme.current` tokens.
+    /// Draws the icon at Dock resolution using `ZTheme.current` tokens.
     static func image(size canvas: CGFloat = 512, cursorVisible: Bool = true) -> NSImage {
-        let theme = QTheme.current
+        let theme = ZTheme.current
         let scale = canvas / 1024
         let image = NSImage(size: NSSize(width: canvas, height: canvas))
         image.lockFocus()

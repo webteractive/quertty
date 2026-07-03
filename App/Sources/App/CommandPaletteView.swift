@@ -64,7 +64,7 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
     // MARK: - Build
 
     private func buildPanel() {
-        let theme = QTheme.current
+        let theme = ZTheme.current
 
         panel.wantsLayer = true
         panel.layer?.backgroundColor = theme.bg2Color.cgColor
@@ -82,7 +82,7 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         magnifier.translatesAutoresizingMaskIntoConstraints = false
 
         searchField.placeholderString = "Type a command…"
-        searchField.font = QTheme.monoFont(size: 15)
+        searchField.font = ZTheme.monoFont(size: 15)
         searchField.textColor = theme.fgColor
         searchField.isBezeled = false
         searchField.drawsBackground = false
@@ -118,7 +118,7 @@ final class CommandPaletteView: NSView, NSTextFieldDelegate {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
         // Empty-state label (centered in the scroll area).
-        emptyLabel.font = QTheme.monoFont(size: 13)
+        emptyLabel.font = ZTheme.monoFont(size: 13)
         emptyLabel.textColor = theme.fg3Color
         emptyLabel.alignment = .center
         emptyLabel.isHidden = true
@@ -284,7 +284,7 @@ private final class PaletteRowView: NSView {
 
     init(command: PaletteCommand) {
         super.init(frame: .zero)
-        let theme = QTheme.current
+        let theme = ZTheme.current
         wantsLayer = true
         layer?.cornerRadius = 9
         translatesAutoresizingMaskIntoConstraints = false
@@ -298,20 +298,20 @@ private final class PaletteRowView: NSView {
         addSubview(chip)
 
         glyphLabel.stringValue = command.glyph
-        glyphLabel.font = QTheme.monoFont(size: 13, weight: .bold)
+        glyphLabel.font = ZTheme.monoFont(size: 13, weight: .bold)
         glyphLabel.textColor = theme.accentColor
         glyphLabel.alignment = .center
         glyphLabel.translatesAutoresizingMaskIntoConstraints = false
         chip.addSubview(glyphLabel)
 
         titleLabel.stringValue = command.label
-        titleLabel.font = QTheme.monoFont(size: 13.5)
+        titleLabel.font = ZTheme.monoFont(size: 13.5)
         titleLabel.textColor = theme.fgColor
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
         kbdLabel.stringValue = command.kbd
-        kbdLabel.font = QTheme.monoFont(size: 11)
+        kbdLabel.font = ZTheme.monoFont(size: 11)
         kbdLabel.textColor = theme.fg3Color
         kbdLabel.alignment = .right
         kbdLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -342,7 +342,7 @@ private final class PaletteRowView: NSView {
 
     func setSelected(_ selected: Bool) {
         layer?.backgroundColor = selected
-            ? QTheme.current.bg3Color.cgColor
+            ? ZTheme.current.bg3Color.cgColor
             : NSColor.clear.cgColor
     }
 

@@ -140,7 +140,7 @@ final class TerminalViewController: NSViewController {
     var onWorkspaceDidChange: (() -> Void)?
 
     /// Called to switch to a specific color scheme (owner applies + persists).
-    var onSelectScheme: ((QColorScheme) -> Void)?
+    var onSelectScheme: ((ZColorScheme) -> Void)?
 
     /// Called to cycle to the next color scheme (⌘⇧T).
     var onCycleScheme: (() -> Void)?
@@ -200,9 +200,9 @@ final class TerminalViewController: NSViewController {
         super.viewDidLoad()
         // Terminal surfaces must adopt the active palette before the first pane
         // is created (see SurfaceRegistry.terminalTheme).
-        registry.terminalTheme = QTheme.current.terminalTheme()
+        registry.terminalTheme = ZTheme.current.terminalTheme()
         registry.terminalConfiguration = ghosttyConfiguration
-        view.layer?.backgroundColor = QTheme.current.bg1Color.cgColor
+        view.layer?.backgroundColor = ZTheme.current.bg1Color.cgColor
         setupSidebarAndContent()
         setupTabBar()
         setupStatusBar()
@@ -354,20 +354,20 @@ final class TerminalViewController: NSViewController {
 
     // MARK: - Theme
 
-    /// Re-applies the active `QTheme` to every surface at runtime (called when
+    /// Re-applies the active `ZTheme` to every surface at runtime (called when
     /// the color scheme changes, e.g. the OS toggled appearance in system mode).
     ///
     /// Static layer colors are updated directly; the tab bar, sidebar, and pane
     /// tree are rebuilt so their cells re-read the theme. The registry recolors
     /// live terminals in place, so PTY sessions are preserved.
     func applyTheme() {
-        view.layer?.backgroundColor = QTheme.current.bg1Color.cgColor
-        contentContainer?.layer?.backgroundColor = QTheme.current.bg1Color.cgColor
-        separatorView?.layer?.backgroundColor = QTheme.current.borderColor.cgColor
+        view.layer?.backgroundColor = ZTheme.current.bg1Color.cgColor
+        contentContainer?.layer?.backgroundColor = ZTheme.current.bg1Color.cgColor
+        separatorView?.layer?.backgroundColor = ZTheme.current.borderColor.cgColor
         tabBarView?.applyTheme()
         sidebarView?.applyTheme()
         statusBarView?.applyTheme()
-        registry.reapplyTerminalTheme(QTheme.current.terminalTheme())
+        registry.reapplyTerminalTheme(ZTheme.current.terminalTheme())
         refreshTabBar()
         refreshSidebar()
         rebuildSurfaceNodeView()
@@ -384,7 +384,7 @@ final class TerminalViewController: NSViewController {
 
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.backgroundColor = QTheme.current.bg1Color.cgColor
+        container.layer?.backgroundColor = ZTheme.current.bg1Color.cgColor
         container.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(sidebar)
@@ -393,7 +393,7 @@ final class TerminalViewController: NSViewController {
         // Thin themed separator line between sidebar and content.
         let separator = NSView()
         separator.wantsLayer = true
-        separator.layer?.backgroundColor = QTheme.current.borderColor.cgColor
+        separator.layer?.backgroundColor = ZTheme.current.borderColor.cgColor
         separator.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(separator)
         self.separatorView = separator
@@ -626,7 +626,7 @@ final class TerminalViewController: NSViewController {
         statusBar.update(
             cwd: Self.abbreviatingHome(cwd),
             appearance: appearanceModeName?() ?? "System",
-            scheme: QTheme.scheme.displayName,
+            scheme: ZTheme.scheme.displayName,
             shell: shell,
             zetty: "v\(Self.buildStamp)",
             ghostty: "libghostty \(Self.libghosttyVersion)"
@@ -923,7 +923,7 @@ final class TerminalViewController: NSViewController {
         }
 
         // Scheme picks are scoped to the current axis, so they never flip dark↔light.
-        let scoped = QTheme.current.isDark ? QColorScheme.darkSchemes : QColorScheme.lightSchemes
+        let scoped = ZTheme.current.isDark ? ZColorScheme.darkSchemes : ZColorScheme.lightSchemes
         let schemeCommands = scoped.map { scheme in
             PaletteCommand(glyph: "◐", label: "Scheme: \(scheme.displayName)", kbd: "") { [weak self] in
                 self?.onSelectScheme?(scheme)

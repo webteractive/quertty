@@ -66,9 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hookInstaller.refreshInstalledScriptIfPresent()
 
         // Load config and resolve the active scheme BEFORE the view controller
-        // is created (it reads QTheme.current in viewDidLoad).
+        // is created (it reads ZTheme.current in viewDidLoad).
         appConfig = configStore.load()
-        QTheme.scheme = resolvedScheme()
+        ZTheme.scheme = resolvedScheme()
         NSApp.appearance = appearanceOverride
         AppIconRenderer.registerBundledFont()   // IBM Plex Mono for the icon mark
         refreshAppIcon()
@@ -129,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Zetty"
         window.isOpaque = true
         window.appearance = appearanceOverride
-        window.backgroundColor = QTheme.current.bg1Color
+        window.backgroundColor = ZTheme.current.bg1Color
         window.titlebarAppearsTransparent = true
         window.contentMinSize = minimumContentSize
         window.contentViewController = tvc
@@ -200,15 +200,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The concrete scheme for the current config + OS appearance.
-    private func resolvedScheme() -> QColorScheme {
+    private func resolvedScheme() -> ZColorScheme {
         switch appConfig.appearance {
         case .dark:
-            return QColorScheme.named(appConfig.themeDark) ?? .midnight
+            return ZColorScheme.named(appConfig.themeDark) ?? .midnight
         case .light:
-            return QColorScheme.named(appConfig.themeLight) ?? .paper
+            return ZColorScheme.named(appConfig.themeLight) ?? .paper
         case .system:
             let name = osIsDark ? appConfig.themeDark : appConfig.themeLight
-            return QColorScheme.named(name) ?? (osIsDark ? .midnight : .paper)
+            return ZColorScheme.named(name) ?? (osIsDark ? .midnight : .paper)
         }
     }
 
@@ -216,7 +216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `NSApp.effectiveAppearance` keeps tracking the OS (and our KVO keeps firing);
     /// the resolved scheme's appearance in the explicit dark/light modes.
     private var appearanceOverride: NSAppearance? {
-        appConfig.appearance == .system ? nil : QTheme.current.appearance
+        appConfig.appearance == .system ? nil : ZTheme.current.appearance
     }
 
     /// In system mode, watch for OS appearance toggles and re-theme live.
@@ -230,19 +230,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func systemAppearanceDidChange() {
         let newScheme = resolvedScheme()
-        guard newScheme != QTheme.scheme else { return }
-        QTheme.scheme = newScheme
+        guard newScheme != ZTheme.scheme else { return }
+        ZTheme.scheme = newScheme
         refreshAppIcon()
-        window?.backgroundColor = QTheme.current.bg1Color
+        window?.backgroundColor = ZTheme.current.bg1Color
         terminalViewController?.applyTheme()
     }
 
     /// Cycles to the next scheme WITHIN the current dark/light axis (⇧⌘T), so it
     /// never crosses the light↔dark boundary. Applies + persists.
     @objc func cycleColorScheme(_ sender: Any?) {
-        let scoped = QTheme.current.isDark ? QColorScheme.darkSchemes : QColorScheme.lightSchemes
+        let scoped = ZTheme.current.isDark ? ZColorScheme.darkSchemes : ZColorScheme.lightSchemes
         guard !scoped.isEmpty else { return }
-        let index = scoped.firstIndex(of: QTheme.scheme) ?? -1
+        let index = scoped.firstIndex(of: ZTheme.scheme) ?? -1
         applyScheme(scoped[(index + 1) % scoped.count])
     }
 
@@ -251,9 +251,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Does NOT touch the appearance axis: schemes only change within the current
     /// axis, so the existing app appearance already matches.
-    func applyScheme(_ scheme: QColorScheme) {
-        QTheme.scheme = scheme
-        window?.backgroundColor = QTheme.current.bg1Color
+    func applyScheme(_ scheme: ZColorScheme) {
+        ZTheme.scheme = scheme
+        window?.backgroundColor = ZTheme.current.bg1Color
         refreshAppIcon()
         terminalViewController?.applyTheme()
 
@@ -269,8 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// when it belongs to the currently visible axis — picking the other
     /// axis's theme (e.g. the light theme while in dark mode) shouldn't flip
     /// the window; it takes effect next time that axis is active.
-    func selectTheme(_ scheme: QColorScheme) {
-        if scheme.isDark == QTheme.scheme.isDark {
+    func selectTheme(_ scheme: ZColorScheme) {
+        if scheme.isDark == ZTheme.scheme.isDark {
             applyScheme(scheme)   // applies live + persists
             return
         }
@@ -286,10 +286,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// scheme, updating chrome + observation, and persisting.
     func setAppearanceMode(_ mode: AppearanceMode) {
         appConfig.appearance = mode
-        QTheme.scheme = resolvedScheme()
+        ZTheme.scheme = resolvedScheme()
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
-        window?.backgroundColor = QTheme.current.bg1Color
+        window?.backgroundColor = ZTheme.current.bg1Color
         refreshAppIcon()
         terminalViewController?.applyTheme()
         startObservingSystemAppearance()   // (re)arm or disarm the OS-follow KVO
@@ -326,10 +326,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the theme + terminal overrides to every live pane — no relaunch needed.
     @objc func reloadConfiguration(_ sender: Any?) {
         appConfig = configStore.load()
-        QTheme.scheme = resolvedScheme()
+        ZTheme.scheme = resolvedScheme()
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
-        window?.backgroundColor = QTheme.current.bg1Color
+        window?.backgroundColor = ZTheme.current.bg1Color
         refreshAppIcon()
         startObservingSystemAppearance()
         terminalViewController?.applyTheme()                                  // chrome + terminal theme

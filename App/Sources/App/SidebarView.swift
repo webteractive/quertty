@@ -20,9 +20,9 @@ struct SidebarProject {
 /// Maps an agent status to its status-dot color, or nil for "no agent".
 func agentStatusColor(_ status: AgentStatus?) -> NSColor? {
     switch status {
-    case .running:        return QTheme.current.greenColor
-    case .needsAttention: return QTheme.current.yellowColor
-    case .idle:           return QTheme.current.fg3Color
+    case .running:        return ZTheme.current.greenColor
+    case .needsAttention: return ZTheme.current.yellowColor
+    case .idle:           return ZTheme.current.fg3Color
     case nil:             return nil
     }
 }
@@ -157,7 +157,7 @@ final class SidebarView: NSView {
         super.init(frame: frameRect)
 
         wantsLayer = true
-        layer?.backgroundColor = QTheme.current.bg0Color.cgColor
+        layer?.backgroundColor = ZTheme.current.bg0Color.cgColor
 
         setupSearchField()
         setupOutlineView()
@@ -182,19 +182,19 @@ final class SidebarView: NSView {
     }
 
     private func styleSearchField() {
-        searchField.font = QTheme.monoFont(size: 12)
-        searchField.textColor = QTheme.current.fgColor
+        searchField.font = ZTheme.monoFont(size: 12)
+        searchField.textColor = ZTheme.current.fgColor
         // The control renders its bezel/icons per its own appearance — pin it
         // to the scheme's axis or it lags behind dark↔light switches.
-        searchField.appearance = QTheme.current.appearance
+        searchField.appearance = ZTheme.current.appearance
         if let cell = searchField.cell as? NSSearchFieldCell {
-            cell.backgroundColor = QTheme.current.bg2Color
+            cell.backgroundColor = ZTheme.current.bg2Color
             cell.drawsBackground = true
             cell.placeholderAttributedString = NSAttributedString(
                 string: "Filter projects…",
                 attributes: [
-                    .font: QTheme.monoFont(size: 12),
-                    .foregroundColor: QTheme.current.fg3Color,
+                    .font: ZTheme.monoFont(size: 12),
+                    .foregroundColor: ZTheme.current.fg3Color,
                 ]
             )
         }
@@ -214,7 +214,7 @@ final class SidebarView: NSView {
         outlineView.allowsMultipleSelection = false
         outlineView.indentationPerLevel = 14
         outlineView.indentationMarkerFollowsCell = true
-        outlineView.backgroundColor = QTheme.current.bg0Color
+        outlineView.backgroundColor = ZTheme.current.bg0Color
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.translatesAutoresizingMaskIntoConstraints = false
@@ -234,7 +234,7 @@ final class SidebarView: NSView {
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = QTheme.current.bg0Color
+        scrollView.backgroundColor = ZTheme.current.bg0Color
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(scrollView)
     }
@@ -295,17 +295,17 @@ final class SidebarView: NSView {
         if let plus = NSImage(systemSymbolName: "plus", accessibilityDescription: "Add project")?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)) {
             addButton.image = plus
-            addButton.contentTintColor = QTheme.current.fg2Color
+            addButton.contentTintColor = ZTheme.current.fg2Color
         }
         addButton.attributedTitle = NSAttributedString(
             string: " Add project",
             attributes: [
-                .font: QTheme.monoFont(size: 12, weight: .medium),
-                .foregroundColor: QTheme.current.fgColor,
+                .font: ZTheme.monoFont(size: 12, weight: .medium),
+                .foregroundColor: ZTheme.current.fgColor,
             ]
         )
-        addPill.layer?.backgroundColor = QTheme.current.bg2Color.cgColor
-        addPill.layer?.borderColor = QTheme.current.borderColor.cgColor
+        addPill.layer?.backgroundColor = ZTheme.current.bg2Color.cgColor
+        addPill.layer?.borderColor = ZTheme.current.borderColor.cgColor
     }
 
     @objc private func bellClicked(_: Any?) {
@@ -323,7 +323,7 @@ final class SidebarView: NSView {
         } else {
             gearButton.title = "⚙"
         }
-        gearButton.contentTintColor = QTheme.current.fg3Color
+        gearButton.contentTintColor = ZTheme.current.fg3Color
     }
 
     private func styleTopAddButton() {
@@ -333,7 +333,7 @@ final class SidebarView: NSView {
         } else {
             topAddButton.title = "+"
         }
-        topAddButton.contentTintColor = QTheme.current.fg2Color
+        topAddButton.contentTintColor = ZTheme.current.fg2Color
     }
 
     /// Updates the attention bell state (count of panes needing attention).
@@ -343,7 +343,7 @@ final class SidebarView: NSView {
     }
 
     private func styleBellButton() {
-        let theme = QTheme.current
+        let theme = ZTheme.current
         let attention = attentionCount > 0
         if #available(macOS 11.0, *) {
             bellButton.image = NSImage(
@@ -355,7 +355,7 @@ final class SidebarView: NSView {
         bellButton.attributedTitle = NSAttributedString(
             string: attention ? " \(attentionCount)" : "",
             attributes: [
-                .font: QTheme.monoFont(size: 12.5, weight: .semibold),
+                .font: ZTheme.monoFont(size: 12.5, weight: .semibold),
                 .foregroundColor: theme.yellowColor,
             ]
         )
@@ -401,9 +401,9 @@ final class SidebarView: NSView {
     // MARK: - Theme
 
     func applyTheme() {
-        layer?.backgroundColor = QTheme.current.bg0Color.cgColor
-        outlineView.backgroundColor = QTheme.current.bg0Color
-        scrollView.backgroundColor = QTheme.current.bg0Color
+        layer?.backgroundColor = ZTheme.current.bg0Color.cgColor
+        outlineView.backgroundColor = ZTheme.current.bg0Color
+        scrollView.backgroundColor = ZTheme.current.bg0Color
         styleSearchField()
         styleAddButton()
         styleBellButton()
@@ -762,13 +762,13 @@ private final class HeaderCellView: NSTableCellView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
 
-        titleLabel.font = QTheme.monoFont(size: 10.5, weight: .bold)
-        titleLabel.textColor = QTheme.current.fg3Color
+        titleLabel.font = ZTheme.monoFont(size: 10.5, weight: .bold)
+        titleLabel.textColor = ZTheme.current.fg3Color
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
 
-        countLabel.font = QTheme.monoFont(size: 10.5)
-        countLabel.textColor = QTheme.current.fg3Color
+        countLabel.font = ZTheme.monoFont(size: 10.5)
+        countLabel.textColor = ZTheme.current.fg3Color
         countLabel.alignment = .right
         countLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(countLabel)
@@ -789,13 +789,13 @@ private final class HeaderCellView: NSTableCellView {
         titleLabel.attributedStringValue = NSAttributedString(
             string: title.uppercased(),
             attributes: [
-                .font: QTheme.monoFont(size: 10.5, weight: .bold),
-                .foregroundColor: QTheme.current.fg3Color,
+                .font: ZTheme.monoFont(size: 10.5, weight: .bold),
+                .foregroundColor: ZTheme.current.fg3Color,
                 .kern: 1.2,
             ]
         )
         countLabel.stringValue = "\(count)"
-        countLabel.textColor = QTheme.current.fg3Color
+        countLabel.textColor = ZTheme.current.fg3Color
     }
 }
 
@@ -813,7 +813,7 @@ private final class SidebarRowView: NSTableRowView {
 
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
-        let theme = QTheme.current
+        let theme = ZTheme.current
 
         let fillRect = bounds.insetBy(dx: 4, dy: 1)
         theme.bg3Color.setFill()
@@ -854,7 +854,7 @@ private final class ProjectCellView: NSTableCellView {
         addSubview(toolIconView)
 
         nameLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        nameLabel.textColor = QTheme.current.fgColor
+        nameLabel.textColor = ZTheme.current.fgColor
         nameLabel.lineBreakMode = .byTruncatingTail
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(nameLabel)
@@ -895,7 +895,7 @@ private final class ProjectCellView: NSTableCellView {
     func configure(name: String, isPinned: Bool, isActive: Bool, agentStatus: AgentStatus?,
                    toolIcon: NSImage? = nil, projectIndex: Int, target: AnyObject, action: Selector) {
         nameLabel.stringValue = name
-        nameLabel.textColor = isActive ? QTheme.current.fgColor : QTheme.current.fg2Color
+        nameLabel.textColor = isActive ? ZTheme.current.fgColor : ZTheme.current.fg2Color
 
         // Single-tab projects surface the pane's tool logo on the row itself
         // (multi-tab projects show logos on their tab child rows instead).
@@ -910,7 +910,7 @@ private final class ProjectCellView: NSTableCellView {
         let glyph = (hasAgent || isActive) ? "diamond.fill" : "diamond"
         glyphView.image = NSImage(systemSymbolName: glyph, accessibilityDescription: "Project")
         glyphView.contentTintColor = agentStatusColor(agentStatus)
-            ?? (isActive ? QTheme.current.accentColor : QTheme.current.fg3Color)
+            ?? (isActive ? ZTheme.current.accentColor : ZTheme.current.fg3Color)
 
         // Pinned rows use a filled accent star; unpinned rows show a dim hollow star.
         let symbolName = isPinned ? "star.fill" : "star"
@@ -918,8 +918,8 @@ private final class ProjectCellView: NSTableCellView {
                                accessibilityDescription: isPinned ? "Pinned" : "Pin") {
             pinButton.image = image
             pinButton.contentTintColor = isPinned
-                ? QTheme.current.accentColor
-                : QTheme.current.fg3Color
+                ? ZTheme.current.accentColor
+                : ZTheme.current.fg3Color
         } else {
             pinButton.title = isPinned ? "★" : "☆"
         }
@@ -956,8 +956,8 @@ private final class TabCellView: NSTableCellView {
         iconView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconView)
 
-        titleLabel.font = QTheme.monoFont(size: 12)
-        titleLabel.textColor = QTheme.current.fg2Color
+        titleLabel.font = ZTheme.monoFont(size: 12)
+        titleLabel.textColor = ZTheme.current.fg2Color
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         addSubview(titleLabel)
@@ -986,7 +986,7 @@ private final class TabCellView: NSTableCellView {
 
     func configure(title: String, isActive: Bool, agentStatus: AgentStatus?, icon: NSImage? = nil) {
         titleLabel.stringValue = title
-        titleLabel.textColor = isActive ? QTheme.current.fgColor : QTheme.current.fg2Color
+        titleLabel.textColor = isActive ? ZTheme.current.fgColor : ZTheme.current.fg2Color
 
         iconView.image = icon
         iconView.contentTintColor = titleLabel.textColor
@@ -997,7 +997,7 @@ private final class TabCellView: NSTableCellView {
         // active/inactive accent. Pulse when an agent is running/needs-attention,
         // or when the tab is active with no agent.
         let dotColor = agentStatusColor(agentStatus)
-            ?? (isActive ? QTheme.current.accentColor : QTheme.current.fg3Color)
+            ?? (isActive ? ZTheme.current.accentColor : ZTheme.current.fg3Color)
         dot.layer?.backgroundColor = dotColor.cgColor
         let shouldPulse = (agentStatus == .running || agentStatus == .needsAttention)
             || (agentStatus == nil && isActive)

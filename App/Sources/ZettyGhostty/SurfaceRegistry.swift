@@ -97,7 +97,7 @@ public final class SurfaceRegistry {
     public var onTitleChange: ((UUID) -> Void)?
 
     /// The terminal color theme applied to every controller as it is created.
-    /// Set by the app layer from the active `QTheme` so the terminal surface
+    /// Set by the app layer from the active `ZTheme` so the terminal surface
     /// matches the app chrome.  Must be assigned before the first
     /// `terminalView(for:)` call to take effect on the initial panes.
     public var terminalTheme: TerminalTheme?

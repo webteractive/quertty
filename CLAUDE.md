@@ -29,15 +29,15 @@ before judging results.
 
 The *visual* spec (tokens, schemes, typography, component anatomy) lives in
 **[`DESIGN.md`](DESIGN.md)**; tokens are in
-[`App/Sources/App/Theme.swift`](App/Sources/App/Theme.swift) (`QTheme`). These
+[`App/Sources/App/Theme.swift`](App/Sources/App/Theme.swift) (`ZTheme`). These
 enforceable rules govern how UI code uses it — a change that violates one should
 be corrected before merge:
 
-1. **Never hardcode a color** — read `QTheme.current.<token>Color`; add a token
+1. **Never hardcode a color** — read `ZTheme.current.<token>Color`; add a token
    rather than inlining hex or a system color (`.controlAccentColor`,
    `.separatorColor`, `.windowBackgroundColor`, …).
 2. **Fonts follow content:** terminal-adjacent UI (tabs, project tree, status
-   bar, kbd chips) uses `QTheme.monoFont`; prose and standard controls use the
+   bar, kbd chips) uses `ZTheme.monoFont`; prose and standard controls use the
    system font.
 3. **Accent = focus/active/brand only, and it glows;** selection/active fills use
    `bg3`, never a saturated accent block.
@@ -45,10 +45,10 @@ be corrected before merge:
    base/panes/terminal · `bg2` elevated inputs & hover · `bg3` chips/selection.
    Don't invent intermediate greys.
 5. **Panes are borderless;** focus is shown by the accent status dot, not a border.
-6. **The terminal tracks the scheme** via `QTheme.current.terminalTheme()`,
+6. **The terminal tracks the scheme** via `ZTheme.current.terminalTheme()`,
    applied through `SurfaceRegistry.terminalTheme` — nowhere else. (A user's
    pasted ghostty directives may override terminal colors; see Configuration.)
-7. **Schemes are all-or-nothing** — a new `QColorScheme` fills every token plus
+7. **Schemes are all-or-nothing** — a new `ZColorScheme` fills every token plus
    its `isDark` flag.
 8. **Semantic colors carry meaning** (green=ok, yellow=attention, red=error,
    purple=git, `fg3`=idle). Don't repurpose them for decoration.
@@ -63,7 +63,7 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
 
 - **`appearance = system | dark | light`** — `system` (default) follows macOS
   live; `dark`/`light` pin one axis.
-- **`theme-dark` / `theme-light`** — the `QColorScheme` used for each axis.
+- **`theme-dark` / `theme-light`** — the `ZColorScheme` used for each axis.
 - **`sidebar-position = left | right`** — which window side the project sidebar
   sits on (also in Settings → Appearance). Collapsed state and the user-dragged
   width persist in `workspace.json`, not here.

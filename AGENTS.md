@@ -34,15 +34,15 @@ Tests: `mise exec -- tuist test` (or the `ZettyGhosttyTests` / `Testing` schemes
 
 The *visual* spec (tokens, schemes, typography, component anatomy) is in
 **[`DESIGN.md`](DESIGN.md)**; tokens live in
-[`App/Sources/App/Theme.swift`](App/Sources/App/Theme.swift) (`QTheme`). DESIGN.md
+[`App/Sources/App/Theme.swift`](App/Sources/App/Theme.swift) (`ZTheme`). DESIGN.md
 is appearance-only — these enforceable rules (and Configuration, below) live here.
 A change that violates one should be corrected before merge:
 
-1. **Never hardcode a color.** Read from `QTheme.current.<token>Color`; add a
+1. **Never hardcode a color.** Read from `ZTheme.current.<token>Color`; add a
    token rather than inlining hex or a system color (`.controlAccentColor`,
    `.separatorColor`, `.windowBackgroundColor`, …).
 2. **Fonts follow content:** terminal-adjacent UI (tabs, project tree, status
-   bar, kbd chips) uses `QTheme.monoFont`; prose and standard controls use the
+   bar, kbd chips) uses `ZTheme.monoFont`; prose and standard controls use the
    system font.
 3. **Accent = focus/active/brand only, and it glows.** Selection/active fills use
    `bg3`, never a saturated accent block.
@@ -50,10 +50,10 @@ A change that violates one should be corrected before merge:
    `bg1` base/panes/terminal · `bg2` elevated inputs & hover · `bg3`
    chips/selection. Don't invent intermediate greys.
 5. **Panes are borderless;** focus is shown by the accent status dot, not a border.
-6. **The terminal tracks the scheme** via `QTheme.current.terminalTheme()`,
+6. **The terminal tracks the scheme** via `ZTheme.current.terminalTheme()`,
    applied through `SurfaceRegistry.terminalTheme` — set it nowhere else. (Pasted
    ghostty directives may override terminal colors; see Configuration.)
-7. **Schemes are all-or-nothing:** a new `QColorScheme` fills every token plus
+7. **Schemes are all-or-nothing:** a new `ZColorScheme` fills every token plus
    its `isDark` flag.
 8. **Semantic colors carry meaning** (green=ok, yellow=attention, red=error,
    purple=git, `fg3`=idle). Don't repurpose them for decoration.
@@ -71,7 +71,7 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves + applies i
 
 - **`appearance = system | dark | light`** — `system` (default) follows macOS
   live (KVO on `NSApp.effectiveAppearance`); `dark`/`light` pin one axis.
-- **`theme-dark` / `theme-light`** — the `QColorScheme` for each axis (case-insensitive).
+- **`theme-dark` / `theme-light`** — the `ZColorScheme` for each axis (case-insensitive).
 - **Every other `key = value` is a ghostty directive**, forwarded verbatim to
   libghostty via `TerminalConfiguration.withCustom` — so a user can paste an
   existing ghostty config straight in (no prefix; we do NOT read the external

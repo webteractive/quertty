@@ -43,7 +43,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     var onSetAppearance: ((AppearanceMode) -> Void)?
 
     /// Called when the user picks a color scheme (owner applies + persists).
-    var onSelectTheme: ((QColorScheme) -> Void)?
+    var onSelectTheme: ((ZColorScheme) -> Void)?
 
     /// Called when the user picks a sidebar position (owner applies + persists).
     var onSetSidebarPosition: ((SidebarPosition) -> Void)?
@@ -59,8 +59,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         )
         window.title = "Settings"
         window.isReleasedWhenClosed = false
-        window.appearance = QTheme.current.appearance
-        window.backgroundColor = QTheme.current.bg1Color
+        window.appearance = ZTheme.current.appearance
+        window.backgroundColor = ZTheme.current.bg1Color
         super.init(window: window)
         window.delegate = self
         window.contentView = buildContent()
@@ -90,7 +90,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func buildContent() -> NSView {
         let root = NSView()
         root.wantsLayer = true
-        root.layer?.backgroundColor = QTheme.current.bg1Color.cgColor
+        root.layer?.backgroundColor = ZTheme.current.bg1Color.cgColor
 
         let tabs = NSTabView()
         tabs.translatesAutoresizingMaskIntoConstraints = false
@@ -179,8 +179,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             + "send keys, open/close/split tabs, capture pane output. "
             + "Installs a symlink at ~/.local/bin/zetty."
         ))
-        cliStatusLabel.font = QTheme.monoFont(size: 11)
-        cliStatusLabel.textColor = QTheme.current.fg3Color
+        cliStatusLabel.font = ZTheme.monoFont(size: 11)
+        cliStatusLabel.textColor = ZTheme.current.fg3Color
         stack.addArrangedSubview(cliStatusLabel)
         cliInstallButton.bezelStyle = .rounded
         cliInstallButton.target = self
@@ -198,11 +198,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         appearancePopup.target = self
         appearancePopup.action = #selector(appearancePicked(_:))
         darkThemePopup.removeAllItems()
-        darkThemePopup.addItems(withTitles: QColorScheme.darkSchemes.map(\.displayName))
+        darkThemePopup.addItems(withTitles: ZColorScheme.darkSchemes.map(\.displayName))
         darkThemePopup.target = self
         darkThemePopup.action = #selector(darkThemePicked(_:))
         lightThemePopup.removeAllItems()
-        lightThemePopup.addItems(withTitles: QColorScheme.lightSchemes.map(\.displayName))
+        lightThemePopup.addItems(withTitles: ZColorScheme.lightSchemes.map(\.displayName))
         lightThemePopup.target = self
         lightThemePopup.action = #selector(lightThemePicked(_:))
         stack.addArrangedSubview(caption(
@@ -235,8 +235,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         preserveSwitch.action = #selector(preserveToggled(_:))
         addFullWidth(switchRow("Preserve sessions", control: preserveSwitch), to: stack)
 
-        sessionStatusLabel.font = QTheme.monoFont(size: 11)
-        sessionStatusLabel.textColor = QTheme.current.fg3Color
+        sessionStatusLabel.font = ZTheme.monoFont(size: 11)
+        sessionStatusLabel.textColor = ZTheme.current.fg3Color
         stack.addArrangedSubview(sessionStatusLabel)
 
         orphanButton.bezelStyle = .rounded
@@ -284,8 +284,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// A justified label + switch row (same anatomy as the harness rows).
     private func switchRow(_ title: String, control: NSSwitch) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = QTheme.monoFont(size: 13, weight: .medium)
-        label.textColor = QTheme.current.fgColor
+        label.font = ZTheme.monoFont(size: 13, weight: .medium)
+        label.textColor = ZTheme.current.fgColor
         label.translatesAutoresizingMaskIntoConstraints = false
         control.translatesAutoresizingMaskIntoConstraints = false
 
@@ -306,8 +306,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     /// A justified label + popup row (same anatomy as the switch rows).
     private func popupRow(_ title: String, popup: NSPopUpButton) -> NSView {
         let label = NSTextField(labelWithString: title)
-        label.font = QTheme.monoFont(size: 13, weight: .medium)
-        label.textColor = QTheme.current.fgColor
+        label.font = ZTheme.monoFont(size: 13, weight: .medium)
+        label.textColor = ZTheme.current.fgColor
         label.translatesAutoresizingMaskIntoConstraints = false
         popup.translatesAutoresizingMaskIntoConstraints = false
 
@@ -334,12 +334,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let index = AppearanceMode.allCases.firstIndex(of: config.appearance) {
             appearancePopup.selectItem(at: index)
         }
-        let dark = QColorScheme.named(config.themeDark) ?? .midnight
-        if let index = QColorScheme.darkSchemes.firstIndex(of: dark) {
+        let dark = ZColorScheme.named(config.themeDark) ?? .midnight
+        if let index = ZColorScheme.darkSchemes.firstIndex(of: dark) {
             darkThemePopup.selectItem(at: index)
         }
-        let light = QColorScheme.named(config.themeLight) ?? .paper
-        if let index = QColorScheme.lightSchemes.firstIndex(of: light) {
+        let light = ZColorScheme.named(config.themeLight) ?? .paper
+        if let index = ZColorScheme.lightSchemes.firstIndex(of: light) {
             lightThemePopup.selectItem(at: index)
         }
         if let index = SidebarPosition.allCases.firstIndex(of: config.sidebarPosition) {
@@ -355,14 +355,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func darkThemePicked(_ sender: NSPopUpButton) {
-        let schemes = QColorScheme.darkSchemes
+        let schemes = ZColorScheme.darkSchemes
         guard (0..<schemes.count).contains(sender.indexOfSelectedItem) else { return }
         onSelectTheme?(schemes[sender.indexOfSelectedItem])
         rebuildAfterThemeChange()
     }
 
     @objc private func lightThemePicked(_ sender: NSPopUpButton) {
-        let schemes = QColorScheme.lightSchemes
+        let schemes = ZColorScheme.lightSchemes
         guard (0..<schemes.count).contains(sender.indexOfSelectedItem) else { return }
         onSelectTheme?(schemes[sender.indexOfSelectedItem])
         rebuildAfterThemeChange()
@@ -382,8 +382,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             tabs.selectedTabViewItem.map(tabs.indexOfTabViewItem)
         }
         switches.removeAll()
-        window?.appearance = QTheme.current.appearance
-        window?.backgroundColor = QTheme.current.bg1Color
+        window?.appearance = ZTheme.current.appearance
+        window?.backgroundColor = ZTheme.current.bg1Color
         window?.contentView = buildContent()
         if let selectedIndex, selectedIndex != NSNotFound {
             tabView?.selectTabViewItem(at: selectedIndex)
@@ -395,8 +395,8 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         row.translatesAutoresizingMaskIntoConstraints = false
 
         let name = NSTextField(labelWithString: harness.displayName)
-        name.font = QTheme.monoFont(size: 13, weight: .medium)
-        name.textColor = QTheme.current.fgColor
+        name.font = ZTheme.monoFont(size: 13, weight: .medium)
+        name.textColor = ZTheme.current.fgColor
         name.translatesAutoresizingMaskIntoConstraints = false
 
         let toggle = NSSwitch()
@@ -419,7 +419,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func sectionHeader(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 15, weight: .semibold)
-        label.textColor = QTheme.current.fgColor
+        label.textColor = ZTheme.current.fgColor
         return label
     }
 
@@ -428,7 +428,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private func caption(_ text: String, link: String? = nil, url: String? = nil) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = .systemFont(ofSize: 11)
-        label.textColor = QTheme.current.fg3Color
+        label.textColor = ZTheme.current.fg3Color
         label.translatesAutoresizingMaskIntoConstraints = false
         label.widthAnchor.constraint(lessThanOrEqualToConstant: 420).isActive = true
 
@@ -436,11 +436,11 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
            let range = text.range(of: link) {
             let attributed = NSMutableAttributedString(string: text, attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: QTheme.current.fg3Color,
+                .foregroundColor: ZTheme.current.fg3Color,
             ])
             attributed.addAttributes([
                 .link: url,
-                .foregroundColor: QTheme.current.accentColor,
+                .foregroundColor: ZTheme.current.accentColor,
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
             ], range: NSRange(range, in: text))
             label.attributedStringValue = attributed
