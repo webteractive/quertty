@@ -251,12 +251,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         fontCombo.completes = true
         fontCombo.removeAllItems()
         fontCombo.addItems(withObjectValues: [Self.defaultFontItem] + installedCuratedFonts())
+        // NSComboBox only fires target/action on Enter — dropdown selection
+        // reports via the delegate (comboBoxSelectionDidChange) and typed text
+        // that loses focus via controlTextDidEndEditing. Wire all three.
+        fontCombo.delegate = self
         fontCombo.target = self
-        fontCombo.action = #selector(fontPicked(_:))   // fires on item select AND Enter
+        fontCombo.action = #selector(fontPicked(_:))
         addFullWidth(controlRow("Font", control: fontCombo, width: 220), to: stack)
 
         fontSizeField.alignment = .right
         fontSizeField.placeholderString = "13"
+        fontSizeField.delegate = self   // commit on focus loss, not just Enter
         fontSizeField.target = self
         fontSizeField.action = #selector(fontSizeTyped(_:))
         fontSizeStepper.minValue = Self.fontSizeRange.lowerBound
@@ -461,20 +466,40 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func fontPicked(_ sender: NSComboBox) {
-        let value = sender.stringValue.trimmingCharacters(in: .whitespaces)
-        if value.isEmpty || value == Self.defaultFontItem {
-            onSetFontFamily?(nil)
-        } else {
-            onSetFontFamily?(value)
-        }
-        rebuildAfterThemeChange()
+        commitFontFamily(sender.stringValue)
     }
 
     @objc private func fontSizeTyped(_ sender: NSTextField) {
-        let value = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        commitFontSize(sender.stringValue)
+    }
+
+    @objc private func fontSizeStepped(_ sender: NSStepper) {
+        let value = sender.doubleValue
+        fontSizeField.stringValue = value == value.rounded() ? String(Int(value)) : String(value)
+        commitFontSize(fontSizeField.stringValue)
+    }
+
+    /// Persists a font-family choice when it differs from the config (the
+    /// commit can arrive via action, dropdown delegate, AND focus loss — the
+    /// no-op guard keeps the overlap from re-applying and re-building).
+    private func commitFontFamily(_ raw: String) {
+        let value = raw.trimmingCharacters(in: .whitespaces)
+        let family: String? = (value.isEmpty || value == Self.defaultFontItem) ? nil : value
+        let current = ConfigStore(fileURL: configURL).load().ghosttyValue("font-family")
+        guard family != current else { return }
+        onSetFontFamily?(family)
+        scheduleRebuildAfterFontChange()
+    }
+
+    /// Persists a font-size edit when it differs from the config; unparseable
+    /// text reverts to the config's value, blank means default.
+    private func commitFontSize(_ raw: String) {
+        let value = raw.trimmingCharacters(in: .whitespaces)
+        let current = ConfigStore(fileURL: configURL).load().ghosttyValue("font-size").flatMap(Double.init)
         guard !value.isEmpty else {
+            guard current != nil else { return }
             onSetFontSize?(nil)   // blank → default
-            rebuildAfterThemeChange()
+            scheduleRebuildAfterFontChange()
             return
         }
         guard let size = Double(value) else {
@@ -482,14 +507,17 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             return
         }
         let clamped = min(max(size, Self.fontSizeRange.lowerBound), Self.fontSizeRange.upperBound)
+        guard clamped != current else { return }
         fontSizeStepper.doubleValue = clamped
         onSetFontSize?(Float(clamped))
-        rebuildAfterThemeChange()
+        scheduleRebuildAfterFontChange()
     }
 
-    @objc private func fontSizeStepped(_ sender: NSStepper) {
-        onSetFontSize?(Float(sender.doubleValue))
-        rebuildAfterThemeChange()
+    /// Rebuilds the window content on the next runloop turn — a commit can
+    /// fire from inside the combo's own delegate/end-editing callbacks, and
+    /// tearing the control down mid-callback is unsafe.
+    private func scheduleRebuildAfterFontChange() {
+        DispatchQueue.main.async { [weak self] in self?.rebuildAfterThemeChange() }
     }
 
     @objc private func sidebarPositionPicked(_ sender: NSPopUpButton) {
@@ -832,5 +860,30 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if warning { alert.alertStyle = .warning }
         if let window { alert.beginSheetModal(for: window) }
         else { alert.runModal() }
+    }
+}
+
+// MARK: - Font control commits (NSComboBoxDelegate)
+
+extension SettingsWindowController: NSComboBoxDelegate {
+
+    /// Dropdown item clicks don't fire the combo's target/action — they land
+    /// here. `stringValue` is still stale at this point, so read the selected
+    /// item directly.
+    func comboBoxSelectionDidChange(_ notification: Notification) {
+        guard let combo = notification.object as? NSComboBox, combo === fontCombo else { return }
+        let index = combo.indexOfSelectedItem
+        guard index >= 0, let item = combo.itemObjectValue(at: index) as? String else { return }
+        commitFontFamily(item)
+    }
+
+    /// Typed values commit on focus loss, not just Enter.
+    func controlTextDidEndEditing(_ notification: Notification) {
+        guard let control = notification.object as? NSControl else { return }
+        if control === fontCombo {
+            commitFontFamily(fontCombo.stringValue)
+        } else if control === fontSizeField {
+            commitFontSize(fontSizeField.stringValue)
+        }
     }
 }
