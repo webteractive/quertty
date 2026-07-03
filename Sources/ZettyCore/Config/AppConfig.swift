@@ -158,6 +158,39 @@ public struct AppConfig: Equatable, Sendable {
         return config
     }
 
+    // MARK: Ghostty directive helpers
+
+    /// The effective value of a ghostty directive — the **last** occurrence of
+    /// `key` (case-insensitive), matching ghostty's last-wins semantics for
+    /// scalar keys. `nil` when the directive is absent.
+    public func ghosttyValue(_ key: String) -> String? {
+        let needle = key.lowercased()
+        return ghostty.last { $0.key.lowercased() == needle }?.value
+    }
+
+    /// Returns a copy with the `key` directive set to `value`: the last
+    /// occurrence is replaced in place (earlier duplicates are dropped, so the
+    /// result has one occurrence and it still wins), or the directive is
+    /// appended when absent. A `nil` value removes every occurrence — the
+    /// terminal falls back to its own default.
+    public func settingGhostty(key: String, value: String?) -> AppConfig {
+        let needle = key.lowercased()
+        var config = self
+        guard let value else {
+            config.ghostty.removeAll { $0.key.lowercased() == needle }
+            return config
+        }
+        guard let last = config.ghostty.lastIndex(where: { $0.key.lowercased() == needle }) else {
+            config.ghostty.append(GhosttyDirective(key: key, value: value))
+            return config
+        }
+        config.ghostty = config.ghostty.enumerated().compactMap { index, directive in
+            guard directive.key.lowercased() == needle else { return directive }
+            return index == last ? GhosttyDirective(key: directive.key, value: value) : nil
+        }
+        return config
+    }
+
     // MARK: Rendering
 
     /// Renders this config back to the documented file format (used when the app

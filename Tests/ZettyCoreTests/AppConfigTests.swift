@@ -135,3 +135,65 @@ import Testing
     config.sidebarPosition = .right
     #expect(AppConfig.parse(config.rendered()) == config)
 }
+
+// MARK: - Ghostty directive helpers (Settings-driven font controls)
+
+@Test func ghosttyValueReadsLastWins() {
+    let c = AppConfig(ghostty: [
+        GhosttyDirective(key: "font-size", value: "12"),
+        GhosttyDirective(key: "cursor-style", value: "bar"),
+        GhosttyDirective(key: "font-size", value: "16"),
+    ])
+    #expect(c.ghosttyValue("font-size") == "16")
+    #expect(c.ghosttyValue("cursor-style") == "bar")
+    #expect(c.ghosttyValue("font-family") == nil)
+}
+
+@Test func ghosttyValueMatchesKeysCaseInsensitively() {
+    let c = AppConfig(ghostty: [GhosttyDirective(key: "Font-Family", value: "Fira Code")])
+    #expect(c.ghosttyValue("font-family") == "Fira Code")
+    #expect(c.ghosttyValue("FONT-FAMILY") == "Fira Code")
+}
+
+@Test func settingGhosttyAppendsWhenAbsent() {
+    let c = AppConfig(ghostty: [GhosttyDirective(key: "cursor-style", value: "bar")])
+        .settingGhostty(key: "font-size", value: "15")
+    #expect(c.ghostty == [
+        GhosttyDirective(key: "cursor-style", value: "bar"),
+        GhosttyDirective(key: "font-size", value: "15"),
+    ])
+}
+
+@Test func settingGhosttyReplacesLastInPlaceAndCollapsesDuplicates() {
+    let c = AppConfig(ghostty: [
+        GhosttyDirective(key: "font-size", value: "12"),
+        GhosttyDirective(key: "cursor-style", value: "bar"),
+        GhosttyDirective(key: "font-size", value: "16"),
+    ]).settingGhostty(key: "font-size", value: "18")
+    // The surviving directive keeps the LAST occurrence's position (last wins),
+    // earlier duplicates are dropped, and other directives keep their order.
+    #expect(c.ghostty == [
+        GhosttyDirective(key: "cursor-style", value: "bar"),
+        GhosttyDirective(key: "font-size", value: "18"),
+    ])
+}
+
+@Test func settingGhosttyNilRemovesAllOccurrences() {
+    let c = AppConfig(ghostty: [
+        GhosttyDirective(key: "font-size", value: "12"),
+        GhosttyDirective(key: "cursor-style", value: "bar"),
+        GhosttyDirective(key: "font-size", value: "16"),
+    ]).settingGhostty(key: "font-size", value: nil)
+    #expect(c.ghostty == [GhosttyDirective(key: "cursor-style", value: "bar")])
+    // Removing an absent key is a no-op.
+    #expect(c.settingGhostty(key: "font-family", value: nil).ghostty == c.ghostty)
+}
+
+@Test func settingGhosttyRoundTripsThroughRenderAndParse() {
+    let c = AppConfig()
+        .settingGhostty(key: "font-family", value: "JetBrains Mono")
+        .settingGhostty(key: "font-size", value: "15")
+    let reparsed = AppConfig.parse(c.rendered())
+    #expect(reparsed.ghosttyValue("font-family") == "JetBrains Mono")
+    #expect(reparsed.ghosttyValue("font-size") == "15")
+}
