@@ -29,18 +29,46 @@ extension TerminalViewController {
         rebuildAndFocus()
     }
 
+    // MARK: - Resize actions
+
+    /// Keyboard pane resizing (⌥⌘ arrows): each press moves the divider of the
+    /// nearest matching-orientation split of the focused pane by one step —
+    /// left/right target a vertical split's divider, up/down a horizontal one.
+    @objc func resizePaneLeft(_ sender: Any?)  { nudgeFocusedPane(direction: .vertical, delta: -Self.resizeStep) }
+    @objc func resizePaneRight(_ sender: Any?) { nudgeFocusedPane(direction: .vertical, delta: Self.resizeStep) }
+    @objc func resizePaneUp(_ sender: Any?)    { nudgeFocusedPane(direction: .horizontal, delta: -Self.resizeStep) }
+    @objc func resizePaneDown(_ sender: Any?)  { nudgeFocusedPane(direction: .horizontal, delta: Self.resizeStep) }
+
+    private static let resizeStep = 0.05
+
+    private func nudgeFocusedPane(direction: SplitDirection, delta: Double) {
+        guard let focusedID = paneTree.focusedSurfaceID,
+              paneTree.layout.nudgeRatio(closestTo: focusedID, direction: direction, by: delta)
+        else { return }
+        rebuildAndFocus()
+    }
+
     // MARK: - Close action
 
     /// Close the focused pane.  If it is the only pane, this is a no-op.
-    /// Key equivalent: ⌘W.
+    /// Asks first when something is still running in it.  Key equivalent: ⌘W.
     @objc func closePane(_ sender: Any?) {
+        guard let focusedID = paneTree.focusedSurfaceID,
+              paneTree.layout.surfaces.count > 1,
+              confirmClosingBusyPanes([focusedID], what: "Pane") else { return }
         let closed = paneTree.closeFocused()
-        guard closed else { return }  // last pane — nothing to do
+        guard closed else { return }
         rebuildAndFocus()
     }
 
     /// Close the pane identified by `surfaceID` (called by the per-pane × button).
-    func closePane(surfaceID: UUID) {
+    /// Asks first when something is still running in it; `confirmIfBusy: false`
+    /// (the CLI path) skips the prompt.
+    func closePane(surfaceID: UUID, confirmIfBusy: Bool = true) {
+        guard paneTree.layout.surfaces.count > 1 else { return }
+        if confirmIfBusy {
+            guard confirmClosingBusyPanes([surfaceID], what: "Pane") else { return }
+        }
         paneTree.focus(surfaceID)
         let closed = paneTree.closeFocused()
         guard closed else { return }

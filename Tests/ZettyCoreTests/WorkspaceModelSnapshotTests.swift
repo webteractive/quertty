@@ -65,6 +65,29 @@ private func tempDir() throws -> URL {
     #expect(workspace.sidebarWidth == SidebarMetrics.defaultWidth)
 }
 
+@Test func workspaceRoundTripPreservesActiveTabAndFocusedPane() throws {
+    let model = WorkspaceModel()
+    let project = model.activeProject
+    project.tabList.newTab()                                  // 2 tabs, active = tab 1
+    let s2 = Surface(workingDir: "/tmp/x")
+    _ = project.tabList.activeTree.splitFocused(direction: .vertical, newSurface: s2)  // focus lands on s2
+
+    let store = WorkspaceStore(directory: try tempDir())
+    try store.save(SessionSnapshot.workspace(from: model))
+
+    let restored = SessionSnapshot.projectRuntimes(from: try store.load())
+    #expect(restored[0].tabList.activeIndex == 1)
+    #expect(restored[0].tabList.activeTree.focusedSurfaceID == s2.id)
+    // The single-pane first tab still focuses its only surface.
+    #expect(restored[0].tabList.trees[0].focusedSurfaceID != nil)
+}
+
+@Test func legacySessionJSONDefaultsActiveTabToZero() throws {
+    let json = Data(#"{"id":"00000000-0000-0000-0000-000000000001","title":"main","tabs":[]}"#.utf8)
+    let session = try JSONDecoder().decode(Session.self, from: json)
+    #expect(session.activeTabIndex == 0)
+}
+
 @Test func workspaceRoundTripsSidebarState() throws {
     var workspace = Workspace()
     workspace.sidebarCollapsed = true

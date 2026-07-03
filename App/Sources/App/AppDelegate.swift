@@ -103,6 +103,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             NSApp.dockTile.badgeLabel = (self.appConfig.notifyBadge && count > 0) ? "\(count)" : nil
         }
+        // Reading an attention item in-app also sweeps its Notification
+        // Center banners, so visited alerts don't linger there.
+        tvc.onAttentionRead = { surfaceID in
+            let shortID = SessionPersistence.shortID(for: surfaceID)
+            let center = UNUserNotificationCenter.current()
+            center.getDeliveredNotifications { delivered in
+                let ids = delivered
+                    .filter { ($0.request.content.userInfo["pane"] as? String) == shortID }
+                    .map(\.request.identifier)
+                if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+            }
+        }
+        tvc.onAttentionReadAll = {
+            UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+        }
 
         let window = ZettyWindow(
             contentRect: NSRect(origin: .zero, size: defaultContentSize),
@@ -664,6 +679,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         shellMenu.addItem(.separator())
 
+        // "Resize Pane …"  ⌥⌘←/→/↑/↓ — nudge the focused pane's divider.
+        let resizeSpecs: [(String, Selector, Int)] = [
+            ("Resize Pane Left", #selector(TerminalViewController.resizePaneLeft(_:)), NSLeftArrowFunctionKey),
+            ("Resize Pane Right", #selector(TerminalViewController.resizePaneRight(_:)), NSRightArrowFunctionKey),
+            ("Resize Pane Up", #selector(TerminalViewController.resizePaneUp(_:)), NSUpArrowFunctionKey),
+            ("Resize Pane Down", #selector(TerminalViewController.resizePaneDown(_:)), NSDownArrowFunctionKey),
+        ]
+        for (title, selector, arrowKey) in resizeSpecs {
+            let item = NSMenuItem(
+                title: title,
+                action: selector,
+                keyEquivalent: String(UnicodeScalar(UInt16(arrowKey))!)
+            )
+            item.keyEquivalentModifierMask = [.command, .option]
+            shellMenu.addItem(item)
+        }
+
+        shellMenu.addItem(.separator())
+
         // "Close Pane"  ⌘W
         let closePane = NSMenuItem(
             title: "Close Pane",
@@ -701,6 +735,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         prevTab.keyEquivalentModifierMask = [.command]
         shellMenu.addItem(prevTab)
+
+        // "Select Tab N"  ⌘1…⌘9 — the item tag carries the zero-based index.
+        for number in 1...9 {
+            let item = NSMenuItem(
+                title: "Select Tab \(number)",
+                action: #selector(TerminalViewController.selectTabByNumber(_:)),
+                keyEquivalent: "\(number)"
+            )
+            item.keyEquivalentModifierMask = [.command]
+            item.tag = number - 1
+            shellMenu.addItem(item)
+        }
 
         // ── View menu ─────────────────────────────────────────────────────────
         let viewMenuItem = NSMenuItem()

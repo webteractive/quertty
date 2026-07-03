@@ -113,6 +113,37 @@ private func surface(_ n: Int) -> Surface {
     #expect(ratio == 0.95)
 }
 
+@Test func nudgeRatioTargetsNearestMatchingOrientationAncestor() {
+    var layout = Layout(root: .leaf(surface(1)))
+    _ = layout.split(surfaceID: surface(1).id, direction: .horizontal, newSurface: surface(2))
+    _ = layout.split(surfaceID: surface(2).id, direction: .vertical, newSurface: surface(3))
+    // Tree: split(h, leaf1, split(v, leaf2, leaf3)).
+
+    // Vertical nudge around leaf3 targets the inner vertical split.
+    let vOK = layout.nudgeRatio(closestTo: surface(3).id, direction: .vertical, by: 0.1)
+    // Horizontal nudge around leaf3 climbs to the root horizontal split.
+    let hOK = layout.nudgeRatio(closestTo: surface(3).id, direction: .horizontal, by: -0.1)
+    #expect(vOK)
+    #expect(hOK)
+    guard case let .split(_, rootRatio, _, second) = layout.root,
+          case let .split(_, innerRatio, _, _) = second else {
+        Issue.record("expected split(leaf, split)"); return
+    }
+    #expect(abs(rootRatio - 0.4) < 0.0001)
+    #expect(abs(innerRatio - 0.6) < 0.0001)
+}
+
+@Test func nudgeRatioFailsWithoutAMatchingAncestor() {
+    var layout = Layout(root: .leaf(surface(1)))
+    let single = layout.nudgeRatio(closestTo: surface(1).id, direction: .vertical, by: 0.1)
+    #expect(single == false)
+    _ = layout.split(surfaceID: surface(1).id, direction: .horizontal, newSurface: surface(2))
+    let wrongAxis = layout.nudgeRatio(closestTo: surface(1).id, direction: .vertical, by: 0.1)
+    let unknown = layout.nudgeRatio(closestTo: surface(9).id, direction: .horizontal, by: 0.1)
+    #expect(wrongAxis == false)
+    #expect(unknown == false)
+}
+
 @Test func setRatioClampsAndTargetsParentSplit() {
     var layout = Layout(root: .leaf(surface(1)))
     _ = layout.split(surfaceID: surface(1).id, direction: .horizontal, newSurface: surface(2))

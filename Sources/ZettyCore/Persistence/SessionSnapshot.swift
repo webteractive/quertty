@@ -57,18 +57,21 @@ public enum SessionSnapshot {
     ///
     /// Each `ProjectRuntime` becomes a `Project` with a single default session
     /// whose tabs are derived from the project's `tabList.trees`. The model's
-    /// active-project index is persisted so restoration reactivates it.
+    /// active-project index, each project's active tab, and each tab's focused
+    /// pane are persisted so restoration reopens exactly where the user left off.
     public static func workspace(from model: WorkspaceModel) -> Workspace {
         let projects = model.projects.enumerated().map { index, runtime in
             let tabs = runtime.tabList.trees.map { tree in
-                Tab(title: tree.manualTitle ?? "", layout: tree.layout)
+                Tab(title: tree.manualTitle ?? "",
+                    layout: tree.layout,
+                    focusedSurfaceID: tree.focusedSurfaceID)
             }
             return Project(
                 name: runtime.name,
                 rootPath: runtime.rootPath,
                 isPinned: runtime.isPinned,
                 sortOrder: index,
-                sessions: [Session(title: "main", tabs: tabs)]
+                sessions: [Session(title: "main", tabs: tabs, activeTabIndex: runtime.tabList.activeIndex)]
             )
         }
         return Workspace(projects: projects, activeProjectIndex: model.activeIndex)
@@ -79,12 +82,13 @@ public enum SessionSnapshot {
     /// Converts a persisted `Workspace` back into an array of `ProjectRuntime`s.
     ///
     /// Each `Project` yields a `ProjectRuntime` whose `TabList` is restored from
-    /// the project's first session's tabs. Returns `[]` for an empty workspace.
+    /// the project's first session's tabs, reselecting the session's active tab.
+    /// Returns `[]` for an empty workspace.
     public static func projectRuntimes(from workspace: Workspace) -> [ProjectRuntime] {
         workspace.projects.map { project in
-            let tabs = project.sessions.first?.tabs ?? []
-            let trees = paneTrees(from: tabs)
-            let tabList = TabList(restoring: trees) ?? TabList()
+            let session = project.sessions.first
+            let trees = paneTrees(from: session?.tabs ?? [])
+            let tabList = TabList(restoring: trees, activeIndex: session?.activeTabIndex ?? 0) ?? TabList()
             return ProjectRuntime(
                 name: project.name,
                 rootPath: project.rootPath,
@@ -96,12 +100,16 @@ public enum SessionSnapshot {
 
     // MARK: - Private helpers
 
-    /// Maps an array of persisted `Tab`s to `PaneTree`s, reusing layout → pane conversion.
+    /// Maps an array of persisted `Tab`s to `PaneTree`s, reusing layout → pane
+    /// conversion. Focus goes to the tab's saved focused pane when it still
+    /// exists in the layout, else the first surface.
     private static func paneTrees(from tabs: [Tab]) -> [PaneTree] {
         tabs.map { tab in
-            let firstID = tab.layout.surfaces.first?.id
+            let surfaceIDs = tab.layout.surfaces.map(\.id)
+            let focusID = tab.focusedSurfaceID.flatMap { surfaceIDs.contains($0) ? $0 : nil }
+                ?? surfaceIDs.first
             let manualTitle = tab.title.isEmpty ? nil : tab.title
-            return PaneTree(layout: tab.layout, focusedSurfaceID: firstID, manualTitle: manualTitle)
+            return PaneTree(layout: tab.layout, focusedSurfaceID: focusID, manualTitle: manualTitle)
         }
     }
 }

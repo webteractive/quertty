@@ -81,3 +81,27 @@ import Testing
     #expect(tabs.title(at: 0) == "Tab 1")
     #expect(tabs.title(at: 2) == "Tab 3")
 }
+
+@Test func moveTabReordersAndFollowsTheActiveTab() {
+    let list = TabList()
+    list.newTab(); list.newTab()                       // 3 tabs, active = 2
+    let ids = list.trees.map { $0.layout.surfaces[0].id }
+
+    list.moveTab(from: 2, to: 0)                       // drag the active tab to the front
+    #expect(list.trees.map { $0.layout.surfaces[0].id } == [ids[2], ids[0], ids[1]])
+    #expect(list.activeIndex == 0)
+
+    list.moveTab(from: 1, to: 2)                       // move a non-active tab away
+    #expect(list.trees.map { $0.layout.surfaces[0].id } == [ids[2], ids[1], ids[0]])
+    #expect(list.activeIndex == 0)
+
+    list.select(index: 1)
+    list.moveTab(from: 2, to: 0)                       // a tab crosses the active one
+    #expect(list.trees.map { $0.layout.surfaces[0].id } == [ids[0], ids[2], ids[1]])
+    #expect(list.activeIndex == 2)                     // still the same logical tab
+
+    list.moveTab(from: 5, to: 0)                       // out of range → no-op
+    list.moveTab(from: 1, to: 1)                       // same slot → no-op
+    #expect(list.trees.count == 3)
+    #expect(list.activeIndex == 2)
+}

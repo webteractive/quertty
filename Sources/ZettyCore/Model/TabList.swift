@@ -68,6 +68,24 @@ public final class TabList {
         }
     }
 
+    /// Moves the tab at `source` to `destination` (drag-to-reorder).
+    /// `activeIndex` keeps pointing at the same logical tab. No-op when
+    /// either index is out of range or they're equal.
+    public func moveTab(from source: Int, to destination: Int) {
+        guard source != destination,
+              trees.indices.contains(source),
+              trees.indices.contains(destination) else { return }
+        let tree = trees.remove(at: source)
+        trees.insert(tree, at: destination)
+        if activeIndex == source {
+            activeIndex = destination
+        } else if source < activeIndex, destination >= activeIndex {
+            activeIndex -= 1
+        } else if source > activeIndex, destination <= activeIndex {
+            activeIndex += 1
+        }
+    }
+
     /// Selects the tab at `index`. No-op if out of range.
     public func select(index: Int) {
         guard trees.indices.contains(index) else { return }

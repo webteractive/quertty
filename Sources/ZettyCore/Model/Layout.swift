@@ -52,6 +52,23 @@ public struct Layout: Codable, Sendable, Equatable {
         return true
     }
 
+    /// Adjust the ratio of the nearest ancestor split of `surfaceID` whose
+    /// orientation matches `direction`, by `delta` (clamped like `setRatio`).
+    /// Drives keyboard pane resizing: vertical splits respond to left/right,
+    /// horizontal splits to up/down. Returns false when the leaf doesn't
+    /// exist or no ancestor has that orientation.
+    @discardableResult
+    public mutating func nudgeRatio(closestTo surfaceID: UUID, direction: SplitDirection, by delta: Double) -> Bool {
+        guard let fullPath = Self.path(to: surfaceID, in: root) else { return false }
+        for length in stride(from: fullPath.count - 1, through: 0, by: -1) {
+            let prefix = Array(fullPath.prefix(length))
+            if case let .split(dir, ratio, _, _)? = node(at: prefix), dir == direction {
+                return setRatio(at: prefix, to: ratio + delta)
+            }
+        }
+        return false
+    }
+
     /// Set the ratio of the split that directly contains the leaf `surfaceID`.
     @discardableResult
     public mutating func setRatio(parentOf surfaceID: UUID, to ratio: Double) -> Bool {
@@ -83,6 +100,29 @@ public struct Layout: Codable, Sendable, Equatable {
     }
 
     // MARK: - Recursion helpers
+
+    /// Branch steps from the root to the leaf holding `surfaceID`, or nil.
+    private static func path(to surfaceID: UUID, in node: SurfaceNode) -> [SplitBranch]? {
+        switch node {
+        case .leaf(let surface):
+            return surface.id == surfaceID ? [] : nil
+        case .split(_, _, let first, let second):
+            if let rest = path(to: surfaceID, in: first) { return [.first] + rest }
+            if let rest = path(to: surfaceID, in: second) { return [.second] + rest }
+            return nil
+        }
+    }
+
+    /// The node reached by walking `path` from the root, or nil if the path
+    /// steps into a leaf.
+    private func node(at path: [SplitBranch]) -> SurfaceNode? {
+        var current = root
+        for step in path {
+            guard case let .split(_, _, first, second) = current else { return nil }
+            current = (step == .first) ? first : second
+        }
+        return current
+    }
 
     /// Returns `node` with the split at `path` given the new `ratio`, or nil
     /// when the path runs into a leaf (no split to resize).

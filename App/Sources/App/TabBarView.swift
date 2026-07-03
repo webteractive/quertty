@@ -39,6 +39,9 @@ final class TabBarView: NSView {
     /// Called when the user clicks the sidebar-toggle button.
     var onToggleSidebar: (() -> Void)?
 
+    /// Called when a drag-reorder finishes: move the tab at `from` to `to`.
+    var onMoveTab: ((Int, Int) -> Void)?
+
     // MARK: - Private subviews
 
     private let sidebarButton: NSButton
@@ -150,6 +153,10 @@ final class TabBarView: NSView {
     /// `icons` (parallel to `titles`, padded with nil) show an agent logo in
     /// the pill when one is bundled.
     func update(titles: [String], icons: [NSImage?] = [], selectedIndex: Int) {
+        // Live agents retitle their tabs every second; rebuilding the pills
+        // mid-drag would destroy the one being dragged and kill the gesture.
+        // Skip refreshes until the drag commits (which triggers one anyway).
+        guard !isReordering else { return }
         cancelRename()
 
         // Remove old items.
@@ -172,9 +179,51 @@ final class TabBarView: NSView {
             item.onDoubleClick = { [weak self] idx in
                 self?.beginRename(at: idx)
             }
+            item.onDragMoved = { [weak self] item, location in
+                self?.itemDragged(item, locationInWindow: location)
+            }
+            item.onDragEnded = { [weak self] item in
+                self?.itemDragEnded(item)
+            }
             stackView.addArrangedSubview(item)
             tabItems.append(item)
         }
+    }
+
+    // MARK: - Drag reorder
+
+    /// The dragged tab's model index when the reorder gesture began (the pill
+    /// itself keeps that index until the owner rebuilds after the commit).
+    private var dragSourceIndex: Int?
+
+    /// True while a pill is being dragged — freezes `update(...)` rebuilds.
+    private var isReordering = false
+
+    /// Live reorder: slide the dragged pill into the slot under the cursor.
+    private func itemDragged(_ item: TabItemView, locationInWindow: NSPoint) {
+        isReordering = true
+        if dragSourceIndex == nil { dragSourceIndex = item.index }
+        guard tabItems.count > 1,
+              let current = tabItems.firstIndex(where: { $0 === item }) else { return }
+        let x = stackView.convert(locationInWindow, from: nil).x
+        let slotWidth = stackView.bounds.width / CGFloat(tabItems.count)
+        guard slotWidth > 0 else { return }
+        let slot = max(0, min(tabItems.count - 1, Int(x / slotWidth)))
+        guard slot != current else { return }
+        stackView.removeArrangedSubview(item)
+        stackView.insertArrangedSubview(item, at: slot)
+        tabItems.remove(at: current)
+        tabItems.insert(item, at: slot)
+    }
+
+    /// Commit: tell the owner where the dragged tab ended up.
+    private func itemDragEnded(_ item: TabItemView) {
+        isReordering = false
+        defer { dragSourceIndex = nil }
+        guard let source = dragSourceIndex,
+              let destination = tabItems.firstIndex(where: { $0 === item }),
+              source != destination else { return }
+        onMoveTab?(source, destination)
     }
 
     /// Applies theme-dependent styling to the sidebar-toggle button; the
@@ -319,6 +368,10 @@ private final class TabItemView: NSView {
     var onSelect: ((Int) -> Void)?
     var onClose: ((Int) -> Void)?
     var onDoubleClick: ((Int) -> Void)?
+    /// Horizontal drag beyond the click slop — reorder gesture in progress
+    /// (location in window coordinates) / finished.
+    var onDragMoved: ((TabItemView, NSPoint) -> Void)?
+    var onDragEnded: ((TabItemView) -> Void)?
 
     // MARK: Subviews
 
@@ -474,10 +527,36 @@ private final class TabItemView: NSView {
 
     // MARK: Mouse interaction
 
+    /// True once the current press has travelled past the click slop and
+    /// became a reorder drag.
+    private var isDraggingToReorder = false
+    private var mouseDownLocation: NSPoint = .zero
+
+    // Selection fires on mouseUP, not down: selecting rebuilds the whole tab
+    // bar, which would orphan this pill mid-gesture and kill drag-to-reorder.
     override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 {
             onDoubleClick?(index)
-        } else {
+            return
+        }
+        mouseDownLocation = event.locationInWindow
+        isDraggingToReorder = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if !isDraggingToReorder,
+           abs(event.locationInWindow.x - mouseDownLocation.x) > 4 {
+            isDraggingToReorder = true
+        }
+        guard isDraggingToReorder else { return }
+        onDragMoved?(self, event.locationInWindow)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if isDraggingToReorder {
+            isDraggingToReorder = false
+            onDragEnded?(self)
+        } else if event.clickCount == 1 {
             onSelect?(index)
         }
     }

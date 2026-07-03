@@ -432,6 +432,14 @@ final class TerminalViewController: NSViewController {
             }
         }
 
+        sidebar.onMoveTab = { [weak self] projectIndex, from, to in
+            guard let self, self.workspace.projects.indices.contains(projectIndex) else { return }
+            self.workspace.projects[projectIndex].tabList.moveTab(from: from, to: to)
+            self.refreshTabBar()
+            self.refreshSidebar()
+            self.onWorkspaceDidChange?()
+        }
+
         sidebar.onTogglePin = { [weak self] index in
             guard let self else { return }
             self.workspace.togglePin(at: index)
@@ -558,6 +566,18 @@ final class TerminalViewController: NSViewController {
         }
         tabBar.onToggleSidebar = { [weak self] in
             self?.toggleSidebar(nil)
+        }
+        tabBar.onMoveTab = { [weak self] source, destination in
+            guard let self else { return }
+            self.workspace.activeTabList.moveTab(from: source, to: destination)
+            // The grabbed tab becomes the active one on drop (browser-style).
+            self.workspace.activeTabList.select(index: destination)
+            self.refreshTabBar()
+            self.refreshSidebar()
+            self.rebuildSurfaceNodeView()
+            if let focused = self.focusedTerminalView() {
+                self.view.window?.makeFirstResponder(focused)
+            }
         }
 
         NSLayoutConstraint.activate([
@@ -789,11 +809,18 @@ final class TerminalViewController: NSViewController {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchor)
     }
 
+    /// Fired when one pane's attention is marked read (visit), and when the
+    /// user clears everything — the owner sweeps the matching macOS
+    /// Notification Center items so they don't pile up after being seen.
+    var onAttentionRead: ((UUID) -> Void)?
+    var onAttentionReadAll: (() -> Void)?
+
     /// Marks every current attention episode read ("read all") — the bell
     /// empties and the Dock badge clears; the status dots stay truthful.
     @objc func clearAllNotifications(_ sender: Any?) {
         attentionInbox.acknowledgeAll()
         publishAttentionCount()
+        onAttentionReadAll?()
     }
 
     /// Visiting a pane marks its current attention episode read.
@@ -801,6 +828,7 @@ final class TerminalViewController: NSViewController {
         guard attentionInbox.unread.contains(surfaceID) else { return }
         attentionInbox.acknowledge(surfaceID)
         publishAttentionCount()
+        onAttentionRead?(surfaceID)
     }
 
     @objc private func attentionPanePicked(_ sender: NSMenuItem) {
@@ -867,6 +895,10 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "+", label: "New Tab", kbd: "⌘T") { [weak self] in self?.newTab(nil) },
             PaletteCommand(glyph: "▮", label: "Split Pane Right", kbd: "⌘D") { [weak self] in self?.splitVertical(nil) },
             PaletteCommand(glyph: "▬", label: "Split Pane Down", kbd: "⇧⌘D") { [weak self] in self?.splitHorizontal(nil) },
+            PaletteCommand(glyph: "⇤", label: "Resize Pane Left", kbd: "⌥⌘←") { [weak self] in self?.resizePaneLeft(nil) },
+            PaletteCommand(glyph: "⇥", label: "Resize Pane Right", kbd: "⌥⌘→") { [weak self] in self?.resizePaneRight(nil) },
+            PaletteCommand(glyph: "⤒", label: "Resize Pane Up", kbd: "⌥⌘↑") { [weak self] in self?.resizePaneUp(nil) },
+            PaletteCommand(glyph: "⤓", label: "Resize Pane Down", kbd: "⌥⌘↓") { [weak self] in self?.resizePaneDown(nil) },
             PaletteCommand(glyph: "×", label: "Close Pane", kbd: "⌘W") { [weak self] in self?.closePane(nil) },
             PaletteCommand(glyph: "⊗", label: "Close Tab", kbd: "⇧⌘W") { [weak self] in self?.closeTab(nil) },
             PaletteCommand(glyph: "→", label: "Next Tab", kbd: "⌘}") { [weak self] in self?.selectNextTab(nil) },
@@ -1019,9 +1051,9 @@ final class TerminalViewController: NSViewController {
                 guard tabList.trees.count > 1 else {
                     return "cannot close the project's only tab"
                 }
-                closeTab(atIndex: location.tabIndex)
+                closeTab(atIndex: location.tabIndex, confirmIfBusy: false)
             } else {
-                closePane(surfaceID: location.surfaceID)
+                closePane(surfaceID: location.surfaceID, confirmIfBusy: false)
                 // Same reasoning as closeTab: prune misses never-spawned panes.
                 onSurfacesClosed?([location.surfaceID])
             }
@@ -1477,12 +1509,35 @@ final class TerminalViewController: NSViewController {
         closeTab(atIndex: workspace.activeTabList.activeIndex)
     }
 
+    /// Asks before closing panes that are still running something. The
+    /// zmx/ps foreground probe is the source of truth ("" or no entry =
+    /// idle shell → no prompt). Returns true when it's OK to close.
+    func confirmClosingBusyPanes(_ surfaceIDs: [UUID], what: String) -> Bool {
+        let running = surfaceIDs.compactMap { id -> String? in
+            guard let command = foregroundBySurface[id], !command.isEmpty else { return nil }
+            return command
+        }
+        guard !running.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Close \(what)?"
+        alert.informativeText = "Still running: \(Set(running).sorted().joined(separator: ", ")). "
+            + "Closing kills the session\(running.count > 1 ? "s" : "")."
+        alert.addButton(withTitle: "Close")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     /// Close the tab at an explicit index (called by the tab bar × button).
-    /// No-op if it is the only tab.
-    func closeTab(atIndex index: Int) {
+    /// No-op if it is the only tab. `confirmIfBusy: false` (the CLI path)
+    /// skips the busy-pane prompt — `zetty close` is documented as
+    /// no-confirmation, and a modal would block the control socket.
+    func closeTab(atIndex index: Int, confirmIfBusy: Bool = true) {
         let tabList = workspace.activeTabList
-        guard tabList.trees.indices.contains(index) else { return }
+        guard tabList.trees.indices.contains(index), tabList.trees.count > 1 else { return }
         let closingSurfaces = tabList.trees[index].layout.surfaces.map(\.id)
+        if confirmIfBusy {
+            guard confirmClosingBusyPanes(closingSurfaces, what: "Tab") else { return }
+        }
         let countBefore = tabList.trees.count
         tabList.closeTab(at: index)
         guard tabList.trees.count != countBefore else { return }   // only tab — no-op
@@ -1534,6 +1589,14 @@ final class TerminalViewController: NSViewController {
     }
 
     // MARK: - Private helper
+
+    /// ⌘1…⌘9 — jump to tab N in the active project. The menu item's tag
+    /// carries the zero-based tab index; out-of-range numbers are no-ops.
+    @objc func selectTabByNumber(_ sender: Any?) {
+        guard let index = (sender as? NSMenuItem)?.tag,
+              workspace.activeTabList.trees.indices.contains(index) else { return }
+        selectTab(at: index)
+    }
 
     private func selectTab(at index: Int) {
         workspace.activeTabList.select(index: index)
