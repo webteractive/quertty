@@ -38,6 +38,23 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let darkThemePopup = NSPopUpButton()
     private let lightThemePopup = NSPopUpButton()
     private let sidebarPositionPopup = NSPopUpButton()
+    private let fontCombo = NSComboBox()
+    private let fontSizeField = NSTextField()
+    private let fontSizeStepper = NSStepper()
+
+    /// Combo item 0 — clears the font-family directive (terminal + chrome
+    /// fall back to their defaults, both JetBrains Mono).
+    private static let defaultFontItem = "Default (JetBrains Mono)"
+
+    /// Coding fonts offered when installed (the combo also accepts free text —
+    /// any family name ghostty accepts).
+    private static let curatedFontFamilies = [
+        "SF Mono", "Menlo", "Monaco", "JetBrains Mono", "Fira Code", "Hack",
+        "Source Code Pro", "IBM Plex Mono", "Cascadia Code", "Iosevka", "Geist Mono",
+    ]
+
+    /// Font size bounds offered by the stepper (ghostty accepts a float).
+    private static let fontSizeRange: ClosedRange<Double> = 8...32
 
     /// Called when the user picks an appearance mode (owner applies + persists).
     var onSetAppearance: ((AppearanceMode) -> Void)?
@@ -47,6 +64,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     /// Called when the user picks a sidebar position (owner applies + persists).
     var onSetSidebarPosition: ((SidebarPosition) -> Void)?
+
+    /// Called when the user picks a font family; `nil` → back to default
+    /// (owner applies + persists).
+    var onSetFontFamily: ((String?) -> Void)?
+
+    /// Called when the user changes the font size; `nil` → back to default
+    /// (owner applies + persists).
+    var onSetFontSize: ((Float?) -> Void)?
 
     init(installer: HookInstaller, liveSurfaceIDs: @escaping () -> [UUID] = { [] }) {
         self.installer = installer
@@ -221,7 +246,41 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         ] {
             addFullWidth(popupRow(title, popup: popup), to: stack)
         }
+
+        fontCombo.usesDataSource = false
+        fontCombo.completes = true
+        fontCombo.removeAllItems()
+        fontCombo.addItems(withObjectValues: [Self.defaultFontItem] + installedCuratedFonts())
+        fontCombo.target = self
+        fontCombo.action = #selector(fontPicked(_:))   // fires on item select AND Enter
+        addFullWidth(controlRow("Font", control: fontCombo, width: 220), to: stack)
+
+        fontSizeField.alignment = .right
+        fontSizeField.placeholderString = "13"
+        fontSizeField.target = self
+        fontSizeField.action = #selector(fontSizeTyped(_:))
+        fontSizeStepper.minValue = Self.fontSizeRange.lowerBound
+        fontSizeStepper.maxValue = Self.fontSizeRange.upperBound
+        fontSizeStepper.increment = 1
+        fontSizeStepper.valueWraps = false
+        fontSizeStepper.target = self
+        fontSizeStepper.action = #selector(fontSizeStepped(_:))
+        let sizeGroup = NSStackView(views: [fontSizeField, fontSizeStepper])
+        sizeGroup.orientation = .horizontal
+        sizeGroup.spacing = 4
+        fontSizeField.widthAnchor.constraint(equalToConstant: 56).isActive = true
+        addFullWidth(controlRow("Font size", control: sizeGroup, width: 0), to: stack)
+        stack.addArrangedSubview(caption(
+            "Applies to the terminal and Zetty's chrome together. Any font name "
+            + "ghostty accepts can be typed; blank size means the default (13)."
+        ))
         return stack
+    }
+
+    /// Curated coding fonts filtered to what's actually installed.
+    private func installedCuratedFonts() -> [String] {
+        let installed = Set(NSFontManager.shared.availableFontFamilies)
+        return Self.curatedFontFamilies.filter(installed.contains)
     }
 
     /// Sessions: zmx-backed preservation + orphan cleanup.
@@ -326,6 +385,33 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         return row
     }
 
+    /// A justified label + arbitrary control row (same anatomy as the popup
+    /// rows). `width` > 0 pins the control's width.
+    private func controlRow(_ title: String, control: NSView, width: CGFloat) -> NSView {
+        let label = NSTextField(labelWithString: title)
+        label.font = ZTheme.monoFont(size: 13, weight: .medium)
+        label.textColor = ZTheme.current.fgColor
+        label.translatesAutoresizingMaskIntoConstraints = false
+        control.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = NSView()
+        row.translatesAutoresizingMaskIntoConstraints = false
+        row.addSubview(label)
+        row.addSubview(control)
+        var constraints = [
+            row.heightAnchor.constraint(equalToConstant: 28),
+            label.leadingAnchor.constraint(equalTo: row.leadingAnchor),
+            label.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+            control.trailingAnchor.constraint(equalTo: row.trailingAnchor),
+            control.centerYAnchor.constraint(equalTo: row.centerYAnchor),
+        ]
+        if width > 0 {
+            constraints.append(control.widthAnchor.constraint(equalToConstant: width))
+        }
+        NSLayoutConstraint.activate(constraints)
+        return row
+    }
+
     // MARK: - Appearance
 
     /// Syncs the appearance + theme popups with the config on disk.
@@ -345,6 +431,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let index = SidebarPosition.allCases.firstIndex(of: config.sidebarPosition) {
             sidebarPositionPopup.selectItem(at: index)
         }
+        fontCombo.stringValue = config.ghosttyValue("font-family") ?? Self.defaultFontItem
+        let size = config.ghosttyValue("font-size").flatMap(Double.init)
+        // Locale-independent (no grouping / "," decimals) so the value round-trips
+        // through the config file and Double.init.
+        fontSizeField.stringValue = size.map { $0 == $0.rounded() ? String(Int($0)) : String($0) } ?? ""
+        fontSizeStepper.doubleValue = size ?? Double(ZTheme.defaultFontSize)
     }
 
     @objc private func appearancePicked(_ sender: NSPopUpButton) {
@@ -365,6 +457,38 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         let schemes = ZColorScheme.lightSchemes
         guard (0..<schemes.count).contains(sender.indexOfSelectedItem) else { return }
         onSelectTheme?(schemes[sender.indexOfSelectedItem])
+        rebuildAfterThemeChange()
+    }
+
+    @objc private func fontPicked(_ sender: NSComboBox) {
+        let value = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        if value.isEmpty || value == Self.defaultFontItem {
+            onSetFontFamily?(nil)
+        } else {
+            onSetFontFamily?(value)
+        }
+        rebuildAfterThemeChange()
+    }
+
+    @objc private func fontSizeTyped(_ sender: NSTextField) {
+        let value = sender.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !value.isEmpty else {
+            onSetFontSize?(nil)   // blank → default
+            rebuildAfterThemeChange()
+            return
+        }
+        guard let size = Double(value) else {
+            refreshAppearance()   // unparseable → revert to the config's value
+            return
+        }
+        let clamped = min(max(size, Self.fontSizeRange.lowerBound), Self.fontSizeRange.upperBound)
+        fontSizeStepper.doubleValue = clamped
+        onSetFontSize?(Float(clamped))
+        rebuildAfterThemeChange()
+    }
+
+    @objc private func fontSizeStepped(_ sender: NSStepper) {
+        onSetFontSize?(Float(sender.doubleValue))
         rebuildAfterThemeChange()
     }
 

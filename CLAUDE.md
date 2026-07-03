@@ -72,6 +72,11 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
   config straight in (no prefix; we don't read `~/.config/ghostty/config`).
   Ghostty defines none of the reserved keys, so there's no collision. Comments
   are **full-line only** (`#` at line start) so `#`-prefixed colors survive.
+- **Font is uniform:** Settings → Appearance's Font/Font size controls read and
+  write the `font-family`/`font-size` **ghostty directives** (no Zetty keys);
+  `ZTheme` derives the chrome font from the same directives (`fontFamily` +
+  `fontScale`, chrome scale clamped 0.85–1.35), so terminal and chrome change
+  together — including when the directives are hand-edited or pasted.
 - **Precedence:** scheme theme → pasted ghostty directives (last wins). Pasted
   directives can override terminal colors; chrome stays scheme-driven.
 - **Reload:** ⇧⌘, (also App menu + palette) re-reads config and re-applies theme

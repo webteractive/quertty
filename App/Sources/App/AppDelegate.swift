@@ -69,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // is created (it reads ZTheme.current in viewDidLoad).
         appConfig = configStore.load()
         ZTheme.scheme = resolvedScheme()
+        applyChromeFontFromConfig()             // chrome font before any view reads monoFont
         NSApp.appearance = appearanceOverride
         AppIconRenderer.registerBundledFont()   // IBM Plex Mono for the icon mark
         refreshAppIcon()
@@ -327,6 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func reloadConfiguration(_ sender: Any?) {
         appConfig = configStore.load()
         ZTheme.scheme = resolvedScheme()
+        applyChromeFontFromConfig()             // hand-edited font directives drive chrome too
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
         window?.backgroundColor = ZTheme.current.bg1Color
@@ -347,6 +349,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appConfig.sidebarPosition = position
         terminalViewController?.sidebarPosition = position
         saveConfig()
+    }
+
+    // MARK: - Font
+
+    /// Renders a font size for the config file: locale-independent, no
+    /// trailing ".0" (ghostty parses a plain float; `Double.init` reads it back).
+    private static func renderFontSize(_ size: Float) -> String {
+        let value = Double(size)
+        return value == value.rounded() ? String(Int(value)) : String(value)
+    }
+
+    /// Applies a Settings font change: persists the ghostty directive, re-fonts
+    /// every live pane, and rescales the chrome (Settings → Appearance).
+    private func setGhosttyFontDirective(key: String, value: String?) {
+        appConfig = appConfig.settingGhostty(key: key, value: value)
+        saveConfig()
+        terminalViewController?.reloadGhosttyConfiguration(makeTerminalConfiguration())
+        applyChromeFontFromConfig()
+        terminalViewController?.applyTheme()
+    }
+
+    /// Threads the effective font directives into `ZTheme` so the chrome
+    /// (tabs, sidebar, status bar) tracks the terminal font. Called at startup
+    /// and on every config change/reload.
+    private func applyChromeFontFromConfig() {
+        ZTheme.setFont(
+            family: appConfig.ghosttyValue("font-family"),
+            size: appConfig.ghosttyValue("font-size").flatMap(Double.init).map { CGFloat($0) }
+        )
     }
 
     // MARK: - Session preservation
@@ -423,6 +454,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.onSetAppearance = { [weak self] mode in self?.setAppearanceMode(mode) }
         controller.onSelectTheme = { [weak self] scheme in self?.selectTheme(scheme) }
         controller.onSetSidebarPosition = { [weak self] position in self?.setSidebarPosition(position) }
+        controller.onSetFontFamily = { [weak self] family in
+            self?.setGhosttyFontDirective(key: "font-family", value: family)
+        }
+        controller.onSetFontSize = { [weak self] size in
+            self?.setGhosttyFontDirective(key: "font-size", value: size.map(Self.renderFontSize))
+        }
         settingsWindowController = controller
         controller.refresh()
         controller.showWindow(nil)

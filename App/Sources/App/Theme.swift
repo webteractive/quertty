@@ -104,14 +104,54 @@ struct ZTheme {
 
     // MARK: Fonts
 
-    /// JetBrains Mono when installed (the handoff's font), else the system
+    /// Ghostty's default `font-size` — the baseline `fontScale` is derived from.
+    static let defaultFontSize: CGFloat = 13
+
+    /// Chrome text scale bounds: the terminal honors any `font-size`, but chrome
+    /// rows/tabs have fixed heights, so their text scale is clamped to keep fitting.
+    static let chromeScaleRange: ClosedRange<CGFloat> = 0.85...1.35
+
+    /// The user's `font-family` config directive; `nil` → the default chain
+    /// (JetBrains Mono, else the system monospaced face). Set by the app layer
+    /// whenever config is loaded or changed, so chrome tracks the terminal font.
+    static var fontFamily: String?
+
+    /// Chrome text scale derived from the `font-size` directive (÷ 13, clamped).
+    /// Applied inside `monoFont` so every chrome call site follows along.
+    static var fontScale: CGFloat = 1
+
+    /// Derives `fontFamily`/`fontScale` from the effective config directives.
+    static func setFont(family: String?, size: CGFloat?) {
+        fontFamily = family
+        let scale = (size ?? defaultFontSize) / defaultFontSize
+        fontScale = min(max(scale, chromeScaleRange.lowerBound), chromeScaleRange.upperBound)
+    }
+
+    /// The user's configured font when set and installed (weight-matched via
+    /// NSFontManager), else JetBrains Mono (the handoff's font), else the system
     /// monospaced face. Used for terminal-adjacent UI: tabs, sidebar tree,
-    /// status bar, kbd chips.
+    /// status bar, kbd chips. `size` is the design size at scale 1 — the user's
+    /// `font-size` scales it uniformly.
     static func monoFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        if let jb = NSFont(name: monoPostScriptName(for: weight), size: size) {
+        let scaled = size * fontScale
+        if let family = fontFamily, let custom = customFont(family: family, size: scaled, weight: weight) {
+            return custom
+        }
+        if let jb = NSFont(name: monoPostScriptName(for: weight), size: scaled) {
             return jb
         }
-        return .monospacedSystemFont(ofSize: size, weight: weight)
+        return .monospacedSystemFont(ofSize: scaled, weight: weight)
+    }
+
+    /// Resolves a weight-appropriate member of `family`, or its regular face,
+    /// or `nil` when the family isn't installed (callers fall back to default).
+    private static func customFont(family: String, size: CGFloat, weight: NSFont.Weight) -> NSFont? {
+        let manager = NSFontManager.shared
+        let fontWeight = Int(round(5 + weight.rawValue * 10))  // NSFontManager's 0–15 scale, 5 = regular
+        if let font = manager.font(withFamily: family, traits: [], weight: fontWeight, size: size) {
+            return font
+        }
+        return NSFont(name: family, size: size)
     }
 
     private static func monoPostScriptName(for weight: NSFont.Weight) -> String {
