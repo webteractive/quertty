@@ -41,20 +41,29 @@ by the tool it's running.
 
 ### Download (recommended)
 
-Grab the latest `Zetty-<version>.dmg` from
-[Releases](https://github.com/webteractive/zetty/releases), open it, and drag
-**Zetty** into **Applications**.
+1. Open the [Releases](https://github.com/webteractive/zetty/releases) page
+   and download the latest `Zetty-<version>.dmg`. While this repository is
+   private, the page requires a GitHub account with access to it — download
+   in a logged-in browser (API/`curl` downloads would need an auth token).
+2. Open the DMG and drag **Zetty** into **Applications**.
+3. Clear the Gatekeeper quarantine flag (see below), then launch Zetty from
+   Applications or Spotlight:
 
-> **First launch:** builds are not yet notarized by Apple, so macOS will
-> report the downloaded app as "damaged". It isn't — that's Gatekeeper
-> quarantine on an unsigned app. Clear it once and launch normally:
+   ```sh
+   xattr -d com.apple.quarantine /Applications/zetty.app
+   ```
+
+> **Why step 3?** Builds are not yet signed or notarized by Apple, so macOS
+> quarantines the downloaded app and shows *"Zetty is damaged and can't be
+> opened. You should move it to the Trash."* It isn't damaged — that's
+> Gatekeeper's message for any unsigned download. The command above clears
+> the flag for good on that copy; you won't see the dialog again until you
+> install an **update**, where the freshly downloaded DMG repeats step 3.
 >
-> ```sh
-> xattr -d com.apple.quarantine /Applications/zetty.app
-> ```
->
-> Proper Developer ID signing + notarization is planned, which will remove
-> this step.
+> Don't bother hunting for "Open Anyway" in System Settings → Privacy &
+> Security — macOS often doesn't offer it for unsigned apps; the command is
+> the reliable path. Developer ID signing + notarization is planned, which
+> removes this step entirely.
 
 ### Build from source
 
