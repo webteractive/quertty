@@ -104,6 +104,15 @@ struct ZTheme {
 
     // MARK: Fonts
 
+    /// Registers every bundled font (JetBrains Mono, the default chrome/terminal
+    /// face) for this process so defaults render identically on machines without
+    /// them installed. Idempotent; call once at launch before the first render.
+    static func registerBundledFonts() {
+        for url in Bundle.main.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? [] {
+            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        }
+    }
+
     /// Ghostty's default `font-size` — the baseline `fontScale` is derived from.
     static let defaultFontSize: CGFloat = 13
 

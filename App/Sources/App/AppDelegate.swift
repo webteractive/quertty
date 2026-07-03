@@ -71,8 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ZTheme.scheme = resolvedScheme()
         applyChromeFontFromConfig()             // chrome font before any view reads monoFont
         NSApp.appearance = appearanceOverride
-        AppIconRenderer.registerBundledFont()   // IBM Plex Mono for the icon mark
-        refreshAppIcon()
+        ZTheme.registerBundledFonts()           // JetBrains Mono default ships with the app
 
         let tvc = TerminalViewController()
         tvc.sidebarPosition = appConfig.sidebarPosition
@@ -156,36 +155,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configWatcher = watcher
     }
 
-    /// The Dock icon's blink frames (cursor bar on/off) for the active scheme,
-    /// re-rendered on every theme change; the timer just swaps cached images.
-    private var dockIconFrames: (on: NSImage, off: NSImage)?
-    private var dockBlinkTimer: Timer?
-    private var dockCursorVisible = true
-
-    /// Re-renders the Dock icon from the active scheme (runtime only — the
-    /// bundled .icns stays the static rendition for Finder) and (re)starts the
-    /// terminal-style cursor blink.
-    private func refreshAppIcon() {
-        dockIconFrames = (on: AppIconRenderer.image(),
-                          off: AppIconRenderer.image(cursorVisible: false))
-        dockCursorVisible = true
-        NSApp.applicationIconImage = dockIconFrames?.on
-        startDockBlink()
-    }
-
-    private func startDockBlink() {
-        dockBlinkTimer?.invalidate()
-        let timer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
-            DispatchQueue.main.async {
-                guard let self, let frames = self.dockIconFrames else { return }
-                self.dockCursorVisible.toggle()
-                NSApp.applicationIconImage = self.dockCursorVisible ? frames.on : frames.off
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        dockBlinkTimer = timer
-    }
-
     /// Persists the config, suppressing the watcher's self-write bounce.
     private func saveConfig() {
         configStore.save(appConfig)
@@ -233,7 +202,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newScheme = resolvedScheme()
         guard newScheme != ZTheme.scheme else { return }
         ZTheme.scheme = newScheme
-        refreshAppIcon()
         window?.backgroundColor = ZTheme.current.bg1Color
         terminalViewController?.applyTheme()
     }
@@ -255,7 +223,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applyScheme(_ scheme: ZColorScheme) {
         ZTheme.scheme = scheme
         window?.backgroundColor = ZTheme.current.bg1Color
-        refreshAppIcon()
         terminalViewController?.applyTheme()
 
         if scheme.isDark {
@@ -291,7 +258,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
         window?.backgroundColor = ZTheme.current.bg1Color
-        refreshAppIcon()
         terminalViewController?.applyTheme()
         startObservingSystemAppearance()   // (re)arm or disarm the OS-follow KVO
         saveConfig()
@@ -332,7 +298,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.appearance = appearanceOverride
         window?.appearance = appearanceOverride
         window?.backgroundColor = ZTheme.current.bg1Color
-        refreshAppIcon()
         startObservingSystemAppearance()
         terminalViewController?.applyTheme()                                  // chrome + terminal theme
         terminalViewController?.reloadGhosttyConfiguration(makeTerminalConfiguration())  // terminal overrides

@@ -20,10 +20,6 @@
 
 // swiftlint:disable identifier_name line_length type_body_length
 public enum ZettyFontFamily: Sendable {
-  public enum IBMPlexMono: Sendable {
-    public static let bold = ZettyFontConvertible(name: "IBMPlexMono-Bold", family: "IBM Plex Mono", path: "IBMPlexMono-Bold.ttf")
-    public static let all: [ZettyFontConvertible] = [bold]
-  }
   public enum JetBrainsMono: Sendable {
     public static let bold = ZettyFontConvertible(name: "JetBrainsMono-Bold", family: "JetBrains Mono", path: "JetBrainsMono-Bold.ttf")
     public static let medium = ZettyFontConvertible(name: "JetBrainsMono-Medium", family: "JetBrains Mono", path: "JetBrainsMono-Medium.ttf")
@@ -31,7 +27,7 @@ public enum ZettyFontFamily: Sendable {
     public static let semiBold = ZettyFontConvertible(name: "JetBrainsMono-SemiBold", family: "JetBrains Mono", path: "JetBrainsMono-SemiBold.ttf")
     public static let all: [ZettyFontConvertible] = [bold, medium, regular, semiBold]
   }
-  public static let allCustomFonts: [ZettyFontConvertible] = [IBMPlexMono.all, JetBrainsMono.all].flatMap { $0 }
+  public static let allCustomFonts: [ZettyFontConvertible] = [JetBrainsMono.all].flatMap { $0 }
   public static func registerAllCustomFonts() {
     allCustomFonts.forEach { $0.register() }
   }
