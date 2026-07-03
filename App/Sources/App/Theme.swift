@@ -17,17 +17,33 @@ import GhosttyTerminal
 /// The selectable color schemes carried over verbatim from the handoff's
 /// `schemes` map. `midnight` is the default.
 enum ZColorScheme: String, CaseIterable {
-    case midnight, nocturne, frost, twilight, ember, daylight, paper
+    // Dark axis.
+    case midnight, nocturne, frost, twilight, ember, velvet, eclipse, rosewood, neon, ukiyo
+    // Light axis.
+    case daylight, paper, glacier, dawn, latte, porcelain, harvest, citrus, daybreak, sakura
 
     var displayName: String {
         switch self {
-        case .midnight: return "Midnight"
-        case .nocturne: return "Nocturne"
-        case .frost:    return "Frost"
-        case .twilight: return "Twilight"
-        case .ember:    return "Ember"
-        case .daylight: return "Daylight"
-        case .paper:    return "Paper"
+        case .midnight:  return "Midnight"
+        case .nocturne:  return "Nocturne"
+        case .frost:     return "Frost"
+        case .twilight:  return "Twilight"
+        case .ember:     return "Ember"
+        case .velvet:    return "Velvet"
+        case .eclipse:   return "Eclipse"
+        case .rosewood:  return "Rosewood"
+        case .neon:      return "Neon"
+        case .ukiyo:     return "Ukiyo"
+        case .daylight:  return "Daylight"
+        case .paper:     return "Paper"
+        case .glacier:   return "Glacier"
+        case .dawn:      return "Dawn"
+        case .latte:     return "Latte"
+        case .porcelain: return "Porcelain"
+        case .harvest:   return "Harvest"
+        case .citrus:    return "Citrus"
+        case .daybreak:  return "Daybreak"
+        case .sakura:    return "Sakura"
         }
     }
 
@@ -224,6 +240,36 @@ struct ZTheme {
                           bord: "3c3836", fg: "ebdbb2", fg2: "d5c4a1", fg3: "928374",
                           green: "b8bb26", blue: "83a598", purple: "d3869b", yellow: "fabd2f", red: "fb4934",
                           tfg: "ebdbb2", tdim: "928374", isDark: true)
+        case .velvet:
+            // Catppuccin Mocha: plush near-black with a mauve glow.
+            return ZTheme(acc: "cba6f7", bg0: "11111b", bg1: "1e1e2e", bg2: "181825", bg3: "313244",
+                          bord: "313244", fg: "cdd6f4", fg2: "a6adc8", fg3: "6c7086",
+                          green: "a6e3a1", blue: "89b4fa", purple: "f5c2e7", yellow: "f9e2af", red: "f38ba8",
+                          tfg: "cdd6f4", tdim: "6c7086", isDark: true)
+        case .eclipse:
+            // One Dark: the Atom classic, steel gray with a cool blue accent.
+            return ZTheme(acc: "61afef", bg0: "21252b", bg1: "282c34", bg2: "2c313a", bg3: "3e4451",
+                          bord: "3e4451", fg: "d7dae0", fg2: "abb2bf", fg3: "5c6370",
+                          green: "98c379", blue: "61afef", purple: "c678dd", yellow: "e5c07b", red: "e06c75",
+                          tfg: "abb2bf", tdim: "5c6370", isDark: true)
+        case .rosewood:
+            // Rosé Pine: muted violet dusk with a soft rose accent.
+            return ZTheme(acc: "ebbcba", bg0: "13111b", bg1: "191724", bg2: "1f1d2e", bg3: "26233a",
+                          bord: "26233a", fg: "e0def4", fg2: "908caa", fg3: "6e6a86",
+                          green: "9ccfd8", blue: "6ea7c0", purple: "c4a7e7", yellow: "f6c177", red: "eb6f92",
+                          tfg: "e0def4", tdim: "6e6a86", isDark: true)
+        case .neon:
+            // Monokai Pro: warm charcoal with high-voltage sign colors.
+            return ZTheme(acc: "ffd866", bg0: "221f22", bg1: "2d2a2e", bg2: "322f34", bg3: "403e41",
+                          bord: "403e41", fg: "fcfcfa", fg2: "c1c0c0", fg3: "727072",
+                          green: "a9dc76", blue: "78dce8", purple: "ab9df2", yellow: "ffd866", red: "ff6188",
+                          tfg: "fcfcfa", tdim: "727072", isDark: true)
+        case .ukiyo:
+            // Kanagawa: sumi ink with woodblock-print pigments.
+            return ZTheme(acc: "7e9cd8", bg0: "16161d", bg1: "1f1f28", bg2: "2a2a37", bg3: "363646",
+                          bord: "363646", fg: "dcd7ba", fg2: "c8c093", fg3: "727169",
+                          green: "98bb6c", blue: "7fb4ca", purple: "957fb8", yellow: "e6c384", red: "e46876",
+                          tfg: "dcd7ba", tdim: "727169", isDark: true)
         case .daylight:
             // Neutral light scheme: white terminal/panes (bg1), gray chrome (bg0),
             // brand teal accent that reads on white.
@@ -236,6 +282,54 @@ struct ZTheme {
                           bord: "d3ccb6", fg: "073642", fg2: "586e75", fg3: "93a1a1",
                           green: "859900", blue: "268bd2", purple: "6c71c4", yellow: "b58900", red: "dc322f",
                           tfg: "586e75", tdim: "93a1a1", isDark: false)
+        case .glacier:
+            // Nord light: polar blue-grays; semantic colors deepened to read on snow.
+            return ZTheme(acc: "5e81ac", bg0: "e0e6ef", bg1: "eceff4", bg2: "e5e9f0", bg3: "d8dee9",
+                          bord: "cdd6e3", fg: "2e3440", fg2: "4c566a", fg3: "8892a5",
+                          green: "5d7e4d", blue: "5e81ac", purple: "9a6a90", yellow: "c08a24", red: "bf616a",
+                          tfg: "3b4252", tdim: "94a3b8", isDark: false)
+        case .dawn:
+            // Rosé Pine Dawn: warm parchment with dusty rose.
+            return ZTheme(acc: "d7827e", bg0: "f2e9e1", bg1: "faf4ed", bg2: "fffaf3", bg3: "e6dcd1",
+                          bord: "dcd0c4", fg: "575279", fg2: "797593", fg3: "9893a5",
+                          green: "56949f", blue: "286983", purple: "907aa9", yellow: "ea9d34", red: "b4637a",
+                          tfg: "575279", tdim: "9893a5", isDark: false)
+        case .latte:
+            // Catppuccin Latte: cool porcelain blues with a mauve accent.
+            return ZTheme(acc: "8839ef", bg0: "dce0e8", bg1: "eff1f5", bg2: "e6e9ef", bg3: "ccd0da",
+                          bord: "bcc0cc", fg: "4c4f69", fg2: "5c5f77", fg3: "8c8fa1",
+                          green: "40a02b", blue: "1e66f5", purple: "8839ef", yellow: "df8e1d", red: "d20f39",
+                          tfg: "4c4f69", tdim: "9ca0b0", isDark: false)
+        case .porcelain:
+            // GitHub light: crisp white with the familiar diff palette.
+            return ZTheme(acc: "0969da", bg0: "eaeef2", bg1: "ffffff", bg2: "f6f8fa", bg3: "dfe5eb",
+                          bord: "d0d7de", fg: "24292f", fg2: "57606a", fg3: "8c959f",
+                          green: "1a7f37", blue: "0969da", purple: "8250df", yellow: "9a6700", red: "cf222e",
+                          tfg: "24292f", tdim: "6e7781", isDark: false)
+        case .harvest:
+            // Gruvbox light: cream and wheat with retro print inks.
+            return ZTheme(acc: "d65d0e", bg0: "ebdbb2", bg1: "fbf1c7", bg2: "f2e5bc", bg3: "ddcca7",
+                          bord: "d5c4a1", fg: "3c3836", fg2: "504945", fg3: "928374",
+                          green: "79740e", blue: "076678", purple: "8f3f71", yellow: "b57614", red: "9d0006",
+                          tfg: "3c3836", tdim: "928374", isDark: false)
+        case .citrus:
+            // Ayu light: airy off-white with a zesty orange accent.
+            return ZTheme(acc: "e6650f", bg0: "efeff0", bg1: "fcfcfc", bg2: "f3f4f5", bg3: "e7e8e9",
+                          bord: "d9dadb", fg: "434a50", fg2: "5c6166", fg3: "8a9199",
+                          green: "6f9400", blue: "399ee6", purple: "a37acc", yellow: "c28510", red: "d63f3f",
+                          tfg: "5c6166", tdim: "a0a6ab", isDark: false)
+        case .daybreak:
+            // Tokyo Night Day: cool periwinkle grays with ink-blue text.
+            return ZTheme(acc: "2e7de9", bg0: "d0d5e3", bg1: "e1e2e7", bg2: "e9e9ee", bg3: "c4c8da",
+                          bord: "b4b8cd", fg: "343b58", fg2: "5a607d", fg3: "8990b3",
+                          green: "587539", blue: "2e7de9", purple: "9854f1", yellow: "8c6c3e", red: "f52a65",
+                          tfg: "343b58", tdim: "8990b3", isDark: false)
+        case .sakura:
+            // Cherry-blossom light: blush surfaces with a deep pink accent.
+            return ZTheme(acc: "c94f7c", bg0: "f3dde5", bg1: "fff7fa", bg2: "fbeef3", bg3: "f0dbe4",
+                          bord: "e3c7d3", fg: "432c3c", fg2: "7a5468", fg3: "a8869a",
+                          green: "3c8f63", blue: "3b76c9", purple: "9061c2", yellow: "b3801f", red: "cf3f56",
+                          tfg: "4b2f3f", tdim: "a8869a", isDark: false)
         }
     }
 

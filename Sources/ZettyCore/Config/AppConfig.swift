@@ -207,7 +207,9 @@ public struct AppConfig: Equatable, Sendable {
         appearance = \(appearance.rawValue)
 
         # Color scheme for each appearance.
-        # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
+        # Built-in schemes — dark: Midnight, Nocturne, Frost, Twilight, Ember, Velvet,
+        #   Eclipse, Rosewood, Neon, Ukiyo · light: Daylight, Paper, Glacier, Dawn,
+        #   Latte, Porcelain, Harvest, Citrus, Daybreak, Sakura
         theme-dark  = \(themeDark)
         theme-light = \(themeLight)
 
@@ -259,7 +261,9 @@ public struct AppConfig: Equatable, Sendable {
     appearance = system
 
     # Color scheme for each appearance.
-    # Built-in schemes: Midnight, Nocturne, Frost, Twilight, Ember, Daylight, Paper
+    # Built-in schemes — dark: Midnight, Nocturne, Frost, Twilight, Ember, Velvet,
+    #   Eclipse, Rosewood, Neon, Ukiyo · light: Daylight, Paper, Glacier, Dawn,
+    #   Latte, Porcelain, Harvest, Citrus, Daybreak, Sakura
     theme-dark  = Twilight
     theme-light = Daylight
 
