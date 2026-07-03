@@ -64,6 +64,9 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
 - **`appearance = system | dark | light`** — `system` (default) follows macOS
   live; `dark`/`light` pin one axis.
 - **`theme-dark` / `theme-light`** — the `QColorScheme` used for each axis.
+- **`sidebar-position = left | right`** — which window side the project sidebar
+  sits on (also in Settings → Appearance). Collapsed state and the user-dragged
+  width persist in `workspace.json`, not here.
 - **Every other `key = value` is a ghostty directive**, forwarded verbatim to
   libghostty (via `TerminalConfiguration`) — users can paste an existing ghostty
   config straight in (no prefix; we don't read `~/.config/ghostty/config`).

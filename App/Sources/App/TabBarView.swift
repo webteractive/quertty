@@ -1,4 +1,5 @@
 import AppKit
+import ZettyCore
 
 // MARK: - TabBarView
 
@@ -94,23 +95,54 @@ final class TabBarView: NSView {
         addSubview(addButton)
 
         NSLayoutConstraint.activate([
-            sidebarButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
             sidebarButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             sidebarButton.widthAnchor.constraint(equalToConstant: 22),
             sidebarButton.heightAnchor.constraint(equalToConstant: 22),
-
-            stackView.leadingAnchor.constraint(equalTo: sidebarButton.trailingAnchor, constant: 6),
             stackView.topAnchor.constraint(equalTo: topAnchor),
             stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            addButton.leadingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: 4),
             addButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            addButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
         ])
+        applyPositionalLayout()
     }
 
     @available(*, unavailable)
     required init?(coder _: NSCoder) { fatalError("not supported") }
+
+    /// Which window side the sidebar sits on. The toggle button hugs the
+    /// sidebar's edge of the tab bar and its symbol matches the side.
+    var sidebarPosition: SidebarPosition = .left {
+        didSet {
+            guard oldValue != sidebarPosition else { return }
+            applyPositionalLayout()
+            styleSidebarButton()
+        }
+    }
+
+    /// Constraints that depend on `sidebarPosition` (swapped when it changes).
+    private var positionalConstraints: [NSLayoutConstraint] = []
+
+    /// Pins `[sidebar-toggle] [tabs] [+]` left-to-right, mirrored when the
+    /// sidebar is on the right so the toggle stays next to the sidebar.
+    private func applyPositionalLayout() {
+        NSLayoutConstraint.deactivate(positionalConstraints)
+        switch sidebarPosition {
+        case .left:
+            positionalConstraints = [
+                sidebarButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+                stackView.leadingAnchor.constraint(equalTo: sidebarButton.trailingAnchor, constant: 6),
+                addButton.leadingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: 4),
+                addButton.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -4),
+            ]
+        case .right:
+            positionalConstraints = [
+                stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+                addButton.leadingAnchor.constraint(equalTo: stackView.trailingAnchor, constant: 4),
+                addButton.trailingAnchor.constraint(lessThanOrEqualTo: sidebarButton.leadingAnchor, constant: -6),
+                sidebarButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            ]
+        }
+        NSLayoutConstraint.activate(positionalConstraints)
+    }
 
     // MARK: - Update
 
@@ -145,10 +177,12 @@ final class TabBarView: NSView {
         }
     }
 
-    /// Applies theme-dependent styling to the sidebar-toggle button.
+    /// Applies theme-dependent styling to the sidebar-toggle button; the
+    /// symbol mirrors the sidebar's window side.
     private func styleSidebarButton() {
         let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
-        if let image = NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: "Toggle sidebar")?
+        let symbol = sidebarPosition == .left ? "sidebar.left" : "sidebar.right"
+        if let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Toggle sidebar")?
             .withSymbolConfiguration(config) {
             sidebarButton.image = image
             sidebarButton.imageScaling = .scaleProportionallyUpOrDown

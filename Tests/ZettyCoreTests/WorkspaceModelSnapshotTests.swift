@@ -57,3 +57,21 @@ private func tempDir() throws -> URL {
     let workspace = try JSONDecoder().decode(Workspace.self, from: json)
     #expect(workspace.activeProjectIndex == 0)
 }
+
+@Test func legacyWorkspaceJSONDefaultsSidebarState() throws {
+    let json = Data(#"{"schemaVersion":1,"projects":[]}"#.utf8)
+    let workspace = try JSONDecoder().decode(Workspace.self, from: json)
+    #expect(workspace.sidebarCollapsed == false)
+    #expect(workspace.sidebarWidth == SidebarMetrics.defaultWidth)
+}
+
+@Test func workspaceRoundTripsSidebarState() throws {
+    var workspace = Workspace()
+    workspace.sidebarCollapsed = true
+    workspace.sidebarWidth = 320
+    let store = WorkspaceStore(directory: try tempDir())
+    try store.save(workspace)
+    let loaded = try store.load()
+    #expect(loaded.sidebarCollapsed == true)
+    #expect(loaded.sidebarWidth == 320)
+}

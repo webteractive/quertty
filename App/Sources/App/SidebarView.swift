@@ -938,3 +938,44 @@ private final class TabCellView: NSTableCellView {
         }
     }
 }
+
+// MARK: - SidebarResizeHandle
+
+/// An invisible grab zone straddling the sidebar/content separator. Dragging
+/// it resizes the sidebar; double-clicking resets the width. The reported
+/// delta is the TOTAL mouse travel since the drag began, sign-corrected via
+/// `dragDirectionSign` so "away from the sidebar's window edge" is always
+/// positive (+1 when the sidebar is on the left, -1 on the right).
+@MainActor
+final class SidebarResizeHandle: NSView {
+
+    var onDragBegan: (() -> Void)?
+    var onDrag: ((CGFloat) -> Void)?
+    var onDragEnded: (() -> Void)?
+    var onReset: (() -> Void)?
+    var dragDirectionSign: CGFloat = 1
+
+    private var dragOriginX: CGFloat = 0
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            onReset?()
+            return
+        }
+        dragOriginX = event.locationInWindow.x
+        onDragBegan?()
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onDrag?((event.locationInWindow.x - dragOriginX) * dragDirectionSign)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard event.clickCount < 2 else { return }
+        onDragEnded?()
+    }
+}

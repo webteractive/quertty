@@ -37,12 +37,16 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     private let appearancePopup = NSPopUpButton()
     private let darkThemePopup = NSPopUpButton()
     private let lightThemePopup = NSPopUpButton()
+    private let sidebarPositionPopup = NSPopUpButton()
 
     /// Called when the user picks an appearance mode (owner applies + persists).
     var onSetAppearance: ((AppearanceMode) -> Void)?
 
     /// Called when the user picks a color scheme (owner applies + persists).
     var onSelectTheme: ((QColorScheme) -> Void)?
+
+    /// Called when the user picks a sidebar position (owner applies + persists).
+    var onSetSidebarPosition: ((SidebarPosition) -> Void)?
 
     init(installer: HookInstaller, liveSurfaceIDs: @escaping () -> [UUID] = { [] }) {
         self.installer = installer
@@ -205,10 +209,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             "System follows macOS and switches between the dark and light theme live; "
             + "Dark/Light pin one axis."
         ))
+        sidebarPositionPopup.removeAllItems()
+        sidebarPositionPopup.addItems(withTitles: SidebarPosition.allCases.map { $0.rawValue.capitalized })
+        sidebarPositionPopup.target = self
+        sidebarPositionPopup.action = #selector(sidebarPositionPicked(_:))
         for (title, popup) in [
             ("Appearance", appearancePopup),
             ("Dark theme", darkThemePopup),
             ("Light theme", lightThemePopup),
+            ("Sidebar position", sidebarPositionPopup),
         ] {
             addFullWidth(popupRow(title, popup: popup), to: stack)
         }
@@ -333,6 +342,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         if let index = QColorScheme.lightSchemes.firstIndex(of: light) {
             lightThemePopup.selectItem(at: index)
         }
+        if let index = SidebarPosition.allCases.firstIndex(of: config.sidebarPosition) {
+            sidebarPositionPopup.selectItem(at: index)
+        }
     }
 
     @objc private func appearancePicked(_ sender: NSPopUpButton) {
@@ -354,6 +366,12 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         guard (0..<schemes.count).contains(sender.indexOfSelectedItem) else { return }
         onSelectTheme?(schemes[sender.indexOfSelectedItem])
         rebuildAfterThemeChange()
+    }
+
+    @objc private func sidebarPositionPicked(_ sender: NSPopUpButton) {
+        let positions = SidebarPosition.allCases
+        guard (0..<positions.count).contains(sender.indexOfSelectedItem) else { return }
+        onSetSidebarPosition?(positions[sender.indexOfSelectedItem])
     }
 
     /// Re-themes this window after an appearance/scheme change made from it:

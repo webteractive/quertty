@@ -14,6 +14,14 @@ public enum AppearanceMode: String, Sendable, CaseIterable {
     case light
 }
 
+// MARK: - SidebarPosition
+
+/// Which side of the window the project sidebar sits on.
+public enum SidebarPosition: String, Sendable, CaseIterable {
+    case left
+    case right
+}
+
 // MARK: - GhosttyDirective
 
 /// A raw ghostty config directive to forward verbatim to libghostty, sourced
@@ -56,6 +64,8 @@ public struct AppConfig: Equatable, Sendable {
     /// macOS Notification Center alerts when an agent needs attention and
     /// Zetty is in the background.
     public var notifySystem: Bool
+    /// Which side of the window the project sidebar sits on.
+    public var sidebarPosition: SidebarPosition
     /// Raw ghostty directives (from `ghostty.<key> = <value>` lines), forwarded
     /// to the terminal unchanged.
     public var ghostty: [GhosttyDirective]
@@ -73,6 +83,7 @@ public struct AppConfig: Equatable, Sendable {
         notifySound: Bool = true,
         notifyBadge: Bool = true,
         notifySystem: Bool = true,
+        sidebarPosition: SidebarPosition = .left,
         ghostty: [GhosttyDirective] = []
     ) {
         self.appearance = appearance
@@ -84,6 +95,7 @@ public struct AppConfig: Equatable, Sendable {
         self.notifySound = notifySound
         self.notifyBadge = notifyBadge
         self.notifySystem = notifySystem
+        self.sidebarPosition = sidebarPosition
         self.ghostty = ghostty
     }
 
@@ -134,6 +146,10 @@ public struct AppConfig: Equatable, Sendable {
                 config.notifyBadge = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "notify-system":
                 config.notifySystem = ["true", "yes", "on", "1"].contains(value.lowercased())
+            case "sidebar-position":
+                if let position = SidebarPosition(rawValue: value.lowercased()) {
+                    config.sidebarPosition = position
+                }
             default:
                 // Anything else is a pasted ghostty directive → forward verbatim.
                 config.ghostty.append(GhosttyDirective(key: rawKey, value: value))
@@ -173,6 +189,9 @@ public struct AppConfig: Equatable, Sendable {
         notify-sound  = \(notifySound)
         notify-badge  = \(notifyBadge)
         notify-system = \(notifySystem)
+
+        # Which side of the window the project sidebar sits on: left | right
+        sidebar-position = \(sidebarPosition.rawValue)
 
         """
         if let editor, !editor.isEmpty {
@@ -227,6 +246,9 @@ public struct AppConfig: Equatable, Sendable {
     notify-sound  = true
     notify-badge  = true
     notify-system = true
+
+    # Which side of the window the project sidebar sits on: left | right
+    sidebar-position = left
 
     # Paste your ghostty config below — any non-Zetty key is forwarded to the
     # terminal verbatim, so an existing ghostty config works as-is. For example:

@@ -121,3 +121,17 @@ import Testing
     store.save(config)
     #expect(store.load() == config)
 }
+
+@Test func configParsesSidebarPosition() {
+    #expect(AppConfig.parse("sidebar-position = right").sidebarPosition == .right)
+    #expect(AppConfig.parse("sidebar-position = LEFT").sidebarPosition == .left)
+    // Missing or invalid values fall back to the default (left).
+    #expect(AppConfig.parse("").sidebarPosition == .left)
+    #expect(AppConfig.parse("sidebar-position = middle").sidebarPosition == .left)
+}
+
+@Test func configRendersSidebarPositionRoundTrip() {
+    var config = AppConfig()
+    config.sidebarPosition = .right
+    #expect(AppConfig.parse(config.rendered()) == config)
+}

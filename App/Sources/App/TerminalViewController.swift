@@ -105,10 +105,30 @@ final class TerminalViewController: NSViewController {
     /// recolored when the scheme changes).
     private var separatorView: NSView?
 
-    /// Sidebar width, and the leading constraint we animate to collapse it.
-    private let sidebarWidth: CGFloat = 244
-    private var sidebarLeadingConstraint: NSLayoutConstraint?
+    /// Sidebar geometry. The edge constraint pins the sidebar to its window
+    /// side (leading or trailing per `sidebarPosition`) and is animated to
+    /// collapse it; the width constraint is user-draggable within
+    /// `SidebarMetrics` bounds. All position-dependent constraints are kept so
+    /// a runtime position change can re-pin in place.
+    private var sidebarWidth: CGFloat = SidebarMetrics.defaultWidth
+    private var sidebarEdgeConstraint: NSLayoutConstraint?
+    private var sidebarWidthConstraint: NSLayoutConstraint?
+    private var sidebarLayoutConstraints: [NSLayoutConstraint] = []
+    private var sidebarResizeHandle: SidebarResizeHandle?
     private var sidebarCollapsed = false
+
+    /// Which window side the sidebar sits on (config `sidebar-position`).
+    /// Settable before the view loads; changing it afterwards re-pins live.
+    var sidebarPosition: SidebarPosition = .left {
+        didSet {
+            guard isViewLoaded, oldValue != sidebarPosition else { return }
+            applySidebarLayout()
+        }
+    }
+
+    /// Read/unread bookkeeping for the attention bell (visiting a pane marks
+    /// its current attention episode read; session-scoped, not persisted).
+    private let attentionInbox = AttentionInbox()
 
     /// KVO token for observing `window.firstResponder`.
     private var firstResponderObservation: NSKeyValueObservation?
@@ -321,6 +341,17 @@ final class TerminalViewController: NSViewController {
         workspace
     }
 
+    /// Seeds the sidebar's restored state. Call before the view loads.
+    func restoreSidebar(collapsed: Bool, width: Double) {
+        sidebarCollapsed = collapsed
+        sidebarWidth = SidebarMetrics.clampWidth(width)
+    }
+
+    /// The sidebar state to persist alongside the workspace.
+    var sidebarStateForPersistence: (collapsed: Bool, width: Double) {
+        (sidebarCollapsed, Double(sidebarWidth))
+    }
+
     // MARK: - Theme
 
     /// Re-applies the active `QTheme` to every surface at runtime (called when
@@ -359,35 +390,28 @@ final class TerminalViewController: NSViewController {
         view.addSubview(sidebar)
         view.addSubview(container)
 
-        // Sidebar left edge, fixed width (handoff: 264pt), full height. The
-        // leading constraint is retained so ⌘B can slide it off-screen.
-        let sidebarLeading = sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor)
-        self.sidebarLeadingConstraint = sidebarLeading
-        NSLayoutConstraint.activate([
-            sidebar.topAnchor.constraint(equalTo: view.topAnchor),
-            sidebarLeading,
-            sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth),
-
-            container.topAnchor.constraint(equalTo: view.topAnchor),
-            container.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            container.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
-        // Add a thin themed separator line between sidebar and content.
+        // Thin themed separator line between sidebar and content.
         let separator = NSView()
         separator.wantsLayer = true
         separator.layer?.backgroundColor = QTheme.current.borderColor.cgColor
         separator.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(separator)
-        NSLayoutConstraint.activate([
-            separator.topAnchor.constraint(equalTo: view.topAnchor),
-            separator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            separator.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            separator.widthAnchor.constraint(equalToConstant: 1),
-        ])
         self.separatorView = separator
+
+        // Invisible grab zone straddling the separator; dragging it resizes
+        // the sidebar within SidebarMetrics bounds, double-click resets.
+        let handle = SidebarResizeHandle()
+        handle.translatesAutoresizingMaskIntoConstraints = false
+        handle.onDragBegan = { [weak self] in self?.sidebarDragStartWidth = self?.sidebarWidth ?? 0 }
+        handle.onDrag = { [weak self] totalDelta in self?.resizeSidebar(totalDelta: totalDelta) }
+        handle.onDragEnded = { [weak self] in self?.onWorkspaceDidChange?() }
+        handle.onReset = { [weak self] in self?.resetSidebarWidth() }
+        view.addSubview(handle)
+        self.sidebarResizeHandle = handle
+
+        self.sidebarView = sidebar
+        self.contentContainer = container
+        applySidebarLayout()
 
         // Wire sidebar callbacks.
         sidebar.onSelectProject = { [weak self] index in
@@ -422,9 +446,88 @@ final class TerminalViewController: NSViewController {
         sidebar.onRemoveProject = { [weak self] index in
             self?.confirmRemoveProject(at: index)
         }
+    }
 
-        self.sidebarView = sidebar
-        self.contentContainer = container
+    /// (Re)pins the sidebar, separator, resize handle, and content container
+    /// for the current `sidebarPosition`, preserving the collapsed state.
+    /// Safe to call repeatedly — deactivates the previous constraint set.
+    private func applySidebarLayout() {
+        guard let sidebar = sidebarView, let container = contentContainer,
+              let separator = separatorView, let handle = sidebarResizeHandle else { return }
+
+        NSLayoutConstraint.deactivate(sidebarLayoutConstraints)
+
+        let width = sidebar.widthAnchor.constraint(equalToConstant: sidebarWidth)
+        sidebarWidthConstraint = width
+
+        var constraints: [NSLayoutConstraint] = [
+            sidebar.topAnchor.constraint(equalTo: view.topAnchor),
+            sidebar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            width,
+            container.topAnchor.constraint(equalTo: view.topAnchor),
+            container.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            separator.topAnchor.constraint(equalTo: view.topAnchor),
+            separator.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            separator.widthAnchor.constraint(equalToConstant: 1),
+            handle.topAnchor.constraint(equalTo: view.topAnchor),
+            handle.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            handle.widthAnchor.constraint(equalToConstant: 8),
+            handle.centerXAnchor.constraint(equalTo: separator.centerXAnchor),
+        ]
+
+        let edge: NSLayoutConstraint
+        switch sidebarPosition {
+        case .left:
+            edge = sidebar.leadingAnchor.constraint(equalTo: view.leadingAnchor)
+            constraints += [
+                container.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+                container.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                separator.leadingAnchor.constraint(equalTo: sidebar.trailingAnchor),
+            ]
+        case .right:
+            edge = sidebar.trailingAnchor.constraint(equalTo: view.trailingAnchor)
+            constraints += [
+                container.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                container.trailingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+                separator.trailingAnchor.constraint(equalTo: sidebar.leadingAnchor),
+            ]
+        }
+        edge.constant = sidebarCollapsed ? collapsedEdgeConstant : 0
+        constraints.append(edge)
+        sidebarEdgeConstraint = edge
+
+        sidebarLayoutConstraints = constraints
+        NSLayoutConstraint.activate(constraints)
+
+        handle.dragDirectionSign = (sidebarPosition == .left) ? 1 : -1
+        handle.isHidden = sidebarCollapsed
+        separator.alphaValue = sidebarCollapsed ? 0 : 1
+        // The tab bar's toggle button hugs the sidebar's edge.
+        tabBarView?.sidebarPosition = sidebarPosition
+    }
+
+    /// The edge-constraint constant that slides the sidebar fully off-screen.
+    private var collapsedEdgeConstant: CGFloat {
+        sidebarPosition == .left ? -sidebarWidth : sidebarWidth
+    }
+
+    /// Width captured when a handle drag begins, so each drag event applies
+    /// its TOTAL delta to the start width (no drift or clamp hysteresis).
+    private var sidebarDragStartWidth: CGFloat = 0
+
+    /// Live width change from a handle drag (delta already sign-corrected).
+    private func resizeSidebar(totalDelta: CGFloat) {
+        let clamped = CGFloat(SidebarMetrics.clampWidth(Double(sidebarDragStartWidth + totalDelta)))
+        guard clamped != sidebarWidth else { return }
+        sidebarWidth = clamped
+        sidebarWidthConstraint?.constant = clamped
+    }
+
+    /// Double-click on the handle: back to the default width.
+    private func resetSidebarWidth() {
+        sidebarWidth = SidebarMetrics.defaultWidth
+        sidebarWidthConstraint?.constant = sidebarWidth
+        onWorkspaceDidChange?()
     }
 
     // MARK: - Tab bar setup
@@ -433,6 +536,7 @@ final class TerminalViewController: NSViewController {
         guard let container = contentContainer else { return }
 
         let tabBar = TabBarView()
+        tabBar.sidebarPosition = sidebarPosition
         tabBar.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(tabBar)
 
@@ -621,32 +725,43 @@ final class TerminalViewController: NSViewController {
             refreshSidebar()
             refreshTabBar()
             publishAttentionCount()
+            // An episode that starts in the pane the user is already looking
+            // at is read on arrival — visiting marks read, and they're there.
+            if NSApp.isActive, let focused = paneTree.focusedSurfaceID {
+                acknowledgeAttention(for: focused)
+            }
         }
     }
 
-    /// Recomputes the attention-pane count and fires the callback — always,
+    /// Recomputes the UNREAD attention count and fires the callback — always,
     /// so a config reload can re-apply Dock-badge gating even when the count
-    /// itself is unchanged (re-setting the same badge is free).
+    /// itself is unchanged (re-setting the same badge is free). Syncs the
+    /// inbox first so ended attention episodes drop their read marks.
     func publishAttentionCount() {
-        let count = workspace.projects
-            .flatMap { $0.tabList.trees.flatMap { $0.layout.surfaces } }
-            .filter { agentDetector.state(for: $0.id).status == .needsAttention }
-            .count
+        let needsAttention = Set(
+            workspace.projects
+                .flatMap { $0.tabList.trees.flatMap { $0.layout.surfaces } }
+                .filter { agentDetector.state(for: $0.id).status == .needsAttention }
+                .map(\.id)
+        )
+        attentionInbox.update(needsAttention: needsAttention)
+        let count = attentionInbox.unreadCount
         sidebarView?.updateBell(count: count)
         onAttentionCountChanged?(count)
     }
 
-    /// The bell's menu: every pane whose agent needs attention; selecting one
-    /// jumps to it. The bell is in-app-only — independent of the notification
-    /// config toggles.
+    /// The bell's menu: every UNREAD needs-attention pane; selecting one jumps
+    /// to it, and the visit marks it read. "Clear All" marks everything read
+    /// without visiting. The bell is in-app-only — independent of the
+    /// notification config toggles.
     private func showAttentionMenu(from anchor: NSView) {
         let menu = NSMenu()
+        let unread = attentionInbox.unread
         for (pIdx, project) in workspace.projects.enumerated() {
             for (tIdx, tree) in project.tabList.trees.enumerated() {
-                for surface in tree.layout.surfaces
-                where agentDetector.state(for: surface.id).status == .needsAttention {
+                for surface in tree.layout.surfaces where unread.contains(surface.id) {
                     let kind = agentDetector.state(for: surface.id).kind
-                    let name = kind.map { AgentIcons.icon(for: $0) != nil ? $0.displayName : $0.displayName } ?? "agent"
+                    let name = kind?.displayName ?? "agent"
                     let item = NSMenuItem(
                         title: "\(name) — \(project.name)",
                         action: #selector(attentionPanePicked(_:)), keyEquivalent: ""
@@ -659,11 +774,33 @@ final class TerminalViewController: NSViewController {
             }
         }
         if menu.items.isEmpty {
-            let item = NSMenuItem(title: "No agent needs attention", action: nil, keyEquivalent: "")
+            let item = NSMenuItem(title: "No unread notifications", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
+        } else {
+            menu.addItem(.separator())
+            let clear = NSMenuItem(
+                title: "Clear All",
+                action: #selector(clearAllNotifications(_:)), keyEquivalent: ""
+            )
+            clear.target = self
+            menu.addItem(clear)
         }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: -6), in: anchor)
+    }
+
+    /// Marks every current attention episode read ("read all") — the bell
+    /// empties and the Dock badge clears; the status dots stay truthful.
+    @objc func clearAllNotifications(_ sender: Any?) {
+        attentionInbox.acknowledgeAll()
+        publishAttentionCount()
+    }
+
+    /// Visiting a pane marks its current attention episode read.
+    private func acknowledgeAttention(for surfaceID: UUID) {
+        guard attentionInbox.unread.contains(surfaceID) else { return }
+        attentionInbox.acknowledge(surfaceID)
+        publishAttentionCount()
     }
 
     @objc private func attentionPanePicked(_ sender: NSMenuItem) {
@@ -677,14 +814,16 @@ final class TerminalViewController: NSViewController {
 
     /// Slides the sidebar off-screen (or back) with ⌘B; the content area follows.
     @objc func toggleSidebar(_ sender: Any?) {
-        guard let leading = sidebarLeadingConstraint else { return }
+        guard let edge = sidebarEdgeConstraint else { return }
         sidebarCollapsed.toggle()
+        sidebarResizeHandle?.isHidden = sidebarCollapsed
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.22
             ctx.allowsImplicitAnimation = true
-            leading.animator().constant = sidebarCollapsed ? -sidebarWidth : 0
+            edge.animator().constant = sidebarCollapsed ? collapsedEdgeConstant : 0
             separatorView?.animator().alphaValue = sidebarCollapsed ? 0 : 1
         }
+        onWorkspaceDidChange?()
     }
 
     // MARK: - Command palette
@@ -736,6 +875,7 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "＋", label: "Add Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
             PaletteCommand(glyph: "−", label: "Remove Current Project…", kbd: "") { [weak self] in self?.removeProject(nil) },
             PaletteCommand(glyph: "⛶", label: "Toggle Sidebar", kbd: "⌘B") { [weak self] in self?.toggleSidebar(nil) },
+            PaletteCommand(glyph: "◎", label: "Clear All Notifications", kbd: "") { [weak self] in self?.clearAllNotifications(nil) },
             PaletteCommand(glyph: "◐", label: "Cycle Color Scheme", kbd: "⇧⌘T") { [weak self] in self?.onCycleScheme?() },
             PaletteCommand(glyph: "◑", label: "Cycle Appearance", kbd: "⇧⌘A") { [weak self] in self?.onCycleAppearance?() },
             PaletteCommand(glyph: "◑", label: "Appearance: System", kbd: "") { [weak self] in self?.onSetAppearance?(.system) },
@@ -1538,6 +1678,9 @@ final class TerminalViewController: NSViewController {
     /// Updates `paneTree.focusedSurfaceID` and re-renders so the focus
     /// highlight moves to the newly focused leaf.
     private func focusChanged(surfaceID: UUID) {
+        // Visiting a needs-attention pane marks it read — even when the pane
+        // was already this tab's focused surface (early return below).
+        acknowledgeAttention(for: surfaceID)
         guard paneTree.focusedSurfaceID != surfaceID else { return }
         paneTree.focus(surfaceID)
         // Update the highlight IN PLACE — do NOT rebuild. Rebuilding re-parents the

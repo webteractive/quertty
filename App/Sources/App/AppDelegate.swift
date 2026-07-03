@@ -73,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshAppIcon()
 
         let tvc = TerminalViewController()
+        tvc.sidebarPosition = appConfig.sidebarPosition
         restoreWorkspace(into: tvc)
         terminalViewController = tvc
         // Autosave on every structural change (debounced), so the on-disk
@@ -296,7 +297,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let tvc = terminalViewController {
             applySessionPreservation(to: tvc)                                 // affects new panes only
             tvc.publishAttentionCount()                                       // re-apply Dock badge gating
+            tvc.sidebarPosition = appConfig.sidebarPosition                   // re-pins only on change
         }
+    }
+
+    /// Applies a sidebar-position choice live and persists it to the config
+    /// (Settings → Appearance).
+    func setSidebarPosition(_ position: SidebarPosition) {
+        appConfig.sidebarPosition = position
+        terminalViewController?.sidebarPosition = position
+        saveConfig()
     }
 
     // MARK: - Session preservation
@@ -372,6 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         controller.onSetAppearance = { [weak self] mode in self?.setAppearanceMode(mode) }
         controller.onSelectTheme = { [weak self] scheme in self?.selectTheme(scheme) }
+        controller.onSetSidebarPosition = { [weak self] position in self?.setSidebarPosition(position) }
         settingsWindowController = controller
         controller.refresh()
         controller.showWindow(nil)
@@ -519,6 +530,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func restoreWorkspace(into tvc: TerminalViewController) {
         do {
             let workspace = try workspaceStore.load()
+            tvc.restoreSidebar(collapsed: workspace.sidebarCollapsed, width: workspace.sidebarWidth)
             let runtimes = SessionSnapshot.projectRuntimes(from: workspace)
             if let model = WorkspaceModel(restoring: runtimes, activeIndex: workspace.activeProjectIndex) {
                 tvc.restore(workspace: model)
@@ -547,7 +559,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingSave?.cancel()
         pendingSave = nil
         guard let tvc = terminalViewController else { return }
-        let workspace = SessionSnapshot.workspace(from: tvc.currentWorkspace)
+        var workspace = SessionSnapshot.workspace(from: tvc.currentWorkspace)
+        let sidebar = tvc.sidebarStateForPersistence
+        workspace.sidebarCollapsed = sidebar.collapsed
+        workspace.sidebarWidth = sidebar.width
         try? workspaceStore.save(workspace)
     }
 
