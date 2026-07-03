@@ -70,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appConfig = configStore.load()
         QTheme.scheme = resolvedScheme()
         NSApp.appearance = appearanceOverride
+        AppIconRenderer.registerBundledFont()   // IBM Plex Mono for the icon mark
         refreshAppIcon()
 
         let tvc = TerminalViewController()
@@ -154,10 +155,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configWatcher = watcher
     }
 
+    /// The Dock icon's blink frames (cursor bar on/off) for the active scheme,
+    /// re-rendered on every theme change; the timer just swaps cached images.
+    private var dockIconFrames: (on: NSImage, off: NSImage)?
+    private var dockBlinkTimer: Timer?
+    private var dockCursorVisible = true
+
     /// Re-renders the Dock icon from the active scheme (runtime only — the
-    /// bundled .icns stays the static rendition for Finder).
+    /// bundled .icns stays the static rendition for Finder) and (re)starts the
+    /// terminal-style cursor blink.
     private func refreshAppIcon() {
-        NSApp.applicationIconImage = AppIconRenderer.image()
+        dockIconFrames = (on: AppIconRenderer.image(),
+                          off: AppIconRenderer.image(cursorVisible: false))
+        dockCursorVisible = true
+        NSApp.applicationIconImage = dockIconFrames?.on
+        startDockBlink()
+    }
+
+    private func startDockBlink() {
+        dockBlinkTimer?.invalidate()
+        let timer = Timer(timeInterval: 0.8, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, let frames = self.dockIconFrames else { return }
+                self.dockCursorVisible.toggle()
+                NSApp.applicationIconImage = self.dockCursorVisible ? frames.on : frames.off
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        dockBlinkTimer = timer
     }
 
     /// Persists the config, suppressing the watcher's self-write bounce.

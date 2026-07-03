@@ -45,7 +45,8 @@ let project = Project(
                 "CFBundleShortVersionString": "0.1.0",
             ]),
             sources: ["App/Sources/App/**"],
-            resources: ["App/Resources/**/*.svg", "App/Resources/*.icns"],
+            resources: ["App/Resources/**/*.svg", "App/Resources/*.icns",
+                        "App/Resources/Fonts/**"],
             scripts: [
                 .post(script: stampBuildCommit,
                       name: "Stamp build commit",

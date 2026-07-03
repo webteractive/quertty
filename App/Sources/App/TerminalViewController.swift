@@ -628,7 +628,7 @@ final class TerminalViewController: NSViewController {
             appearance: appearanceModeName?() ?? "System",
             scheme: QTheme.scheme.displayName,
             shell: shell,
-            zetty: "zetty \(Self.buildStamp)",
+            zetty: "v\(Self.buildStamp)",
             ghostty: "libghostty \(Self.libghosttyVersion)"
         )
         scheduleGitProbe(for: cwd, surfaceID: paneTree.focusedSurfaceID)

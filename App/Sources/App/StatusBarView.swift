@@ -110,7 +110,7 @@ final class StatusBarView: NSView {
         ])
 
         configureStack(leftStack, views: [branchIcon, branchLabel, aheadLabel, behindLabel, changesLabel])
-        configureStack(rightStack, views: [editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, zettyLabel, sep3, ghosttyLabel])
+        configureStack(rightStack, views: [editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, zettyLabel])
         rightStack.setCustomSpacing(10, after: editorPill)
 
         addSubview(topBorder)

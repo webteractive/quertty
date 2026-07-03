@@ -4,18 +4,36 @@ import AppKit
 /// follows theme changes while the app runs (the bundled .icns stays the
 /// static Twilight rendition for Finder and the login switcher).
 ///
-/// Same composition as the shipped icon: squircle plate on the scheme's
-/// surface ramp, a glowing accent Z with a block cursor at its foot, and
-/// faint rising z's — sessions sleep when you quit. Call on the main thread
-/// (it reads QTheme and uses AppKit drawing).
+/// Composition: squircle plate on the scheme's surface ramp, then a terminal
+/// prompt mark — a dim `>`, the glowing accent Z, and a chunky cursor bar
+/// exactly as tall as the Z — set in IBM Plex Mono Bold (bundled). Layout is
+/// CoreText-ink based: glyph image bounds (not advances) are centered on the
+/// plate, and the `>` is centered on the Z's vertical midline. Pass
+/// `cursorVisible: false` for the blink's "off" frame; the layout doesn't
+/// shift. Call on the main thread (it reads QTheme and uses AppKit drawing).
 enum AppIconRenderer {
 
+    /// Registers the bundled IBM Plex Mono face for this process. Idempotent;
+    /// call once at launch before the first render.
+    static func registerBundledFont() {
+        guard let url = Bundle.main.url(forResource: "IBMPlexMono-Bold", withExtension: "ttf") else { return }
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+
+    private static func plexBold(size: CGFloat) -> NSFont {
+        NSFont(name: "IBMPlexMono-Bold", size: size) ?? QTheme.monoFont(size: size, weight: .bold)
+    }
+
     /// Draws the icon at Dock resolution using `QTheme.current` tokens.
-    static func image(size canvas: CGFloat = 512) -> NSImage {
+    static func image(size canvas: CGFloat = 512, cursorVisible: Bool = true) -> NSImage {
         let theme = QTheme.current
         let scale = canvas / 1024
         let image = NSImage(size: NSSize(width: canvas, height: canvas))
         image.lockFocus()
+        guard let ctx = NSGraphicsContext.current?.cgContext else {
+            image.unlockFocus()
+            return image
+        }
 
         // ── Squircle plate (surface ramp) ───────────────────────────
         let margin = 100 * scale
@@ -33,39 +51,45 @@ enum AppIconRenderer {
         border.lineWidth = 6 * scale
         border.stroke()
 
-        // ── Faint rising z's (sleeping sessions) ────────────────────
-        for (index, glyphSize) in [(0, CGFloat(96)), (1, CGFloat(72)), (2, CGFloat(54))] {
-            let z = NSAttributedString(string: "z", attributes: [
-                .font: QTheme.monoFont(size: glyphSize * scale, weight: .bold),
-                .foregroundColor: theme.fg3Color.withAlphaComponent(0.55 - CGFloat(index) * 0.15),
-            ])
-            z.draw(at: NSPoint(x: (640 + CGFloat(index) * 82) * scale,
-                               y: (610 + CGFloat(index) * 92) * scale))
+        // ── The mark: "> Z |" ink-centered on the plate ─────────────
+        let zLine = CTLineCreateWithAttributedString(NSAttributedString(string: "Z", attributes: [
+            .font: plexBold(size: 420 * scale), .foregroundColor: theme.accentColor,
+        ]))
+        let promptLine = CTLineCreateWithAttributedString(NSAttributedString(string: ">", attributes: [
+            .font: plexBold(size: 320 * scale), .foregroundColor: theme.fg3Color,
+        ]))
+        let zInk = CTLineGetImageBounds(zLine, ctx)          // relative to baseline origin
+        let promptInk = CTLineGetImageBounds(promptLine, ctx)
+
+        let barWidth = 110 * scale
+        let gap = 48 * scale
+        let totalInk = promptInk.width + gap + zInk.width + gap + barWidth
+        let inkStartX = (canvas - totalInk) / 2
+        let midlineY = canvas / 2
+
+        ctx.saveGState()
+        ctx.setShadow(offset: .zero, blur: 52 * scale,
+                      color: theme.accentColor.withAlphaComponent(0.85).cgColor)
+
+        // The ">" and the Z share a vertical midline; the bar spans the Z's ink.
+        ctx.textPosition = CGPoint(x: inkStartX - promptInk.minX,
+                                   y: midlineY - promptInk.midY)
+        CTLineDraw(promptLine, ctx)
+        let zBaselineY = midlineY - zInk.midY
+        ctx.textPosition = CGPoint(x: inkStartX + promptInk.width + gap - zInk.minX,
+                                   y: zBaselineY)
+        CTLineDraw(zLine, ctx)
+
+        if cursorVisible {
+            let bar = CGRect(x: inkStartX + promptInk.width + gap + zInk.width + gap,
+                             y: zBaselineY + zInk.minY,
+                             width: barWidth, height: zInk.height)
+            ctx.addPath(CGPath(roundedRect: bar, cornerWidth: 24 * scale,
+                               cornerHeight: 24 * scale, transform: nil))
+            ctx.setFillColor(theme.accentColor.cgColor)
+            ctx.fillPath()
         }
-
-        // ── The Z + cursor (accent, glowing) ────────────────────────
-        NSGraphicsContext.current?.saveGraphicsState()
-        let glow = NSShadow()
-        glow.shadowColor = theme.accentColor.withAlphaComponent(0.85)
-        glow.shadowBlurRadius = 52 * scale
-        glow.shadowOffset = .zero
-        glow.set()
-
-        let zGlyph = NSAttributedString(string: "Z", attributes: [
-            .font: QTheme.monoFont(size: 560 * scale, weight: .bold),
-            .foregroundColor: theme.accentColor,
-        ])
-        let zSize = zGlyph.size()
-        let zOrigin = NSPoint(x: (canvas - zSize.width) / 2 - 60 * scale,
-                              y: (canvas - zSize.height) / 2 - 30 * scale)
-        zGlyph.draw(at: zOrigin)
-
-        let cursor = NSRect(x: zOrigin.x + zSize.width + 30 * scale,
-                            y: zOrigin.y + 118 * scale,
-                            width: 96 * scale, height: 180 * scale)
-        theme.accentColor.setFill()
-        NSBezierPath(roundedRect: cursor, xRadius: 14 * scale, yRadius: 14 * scale).fill()
-        NSGraphicsContext.current?.restoreGraphicsState()
+        ctx.restoreGState()
 
         image.unlockFocus()
         return image
