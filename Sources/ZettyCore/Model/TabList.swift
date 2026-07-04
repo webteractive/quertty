@@ -36,9 +36,12 @@ public final class TabList {
     ///   - trees: Non-empty array of restored `PaneTree`s.
     ///   - activeIndex: Index of the tab to select initially; clamped to a
     ///     valid range automatically.
-    public convenience init?(restoring trees: [PaneTree], activeIndex: Int = 0) {
+    ///   - defaultWorkingDir: Directory new tabs/panes spawn in (the owning
+    ///     project's root) — carried across restore so it isn't lost to `~`.
+    public convenience init?(restoring trees: [PaneTree], activeIndex: Int = 0,
+                             defaultWorkingDir: String = NSHomeDirectory()) {
         guard !trees.isEmpty else { return nil }
-        self.init()
+        self.init(defaultWorkingDir: defaultWorkingDir)
         self.trees = trees
         self.activeIndex = min(max(activeIndex, 0), trees.count - 1)
     }

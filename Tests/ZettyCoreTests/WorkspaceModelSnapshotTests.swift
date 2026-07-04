@@ -33,6 +33,20 @@ private func tempDir() throws -> URL {
     #expect(SessionSnapshot.projectRuntimes(from: Workspace()).isEmpty)
 }
 
+@Test func restoredProjectSpawnsNewTabsInProjectRoot() throws {
+    let model = WorkspaceModel()
+    _ = model.addProject(name: "web", rootPath: "/tmp/web")
+
+    let store = WorkspaceStore(directory: try tempDir())
+    try store.save(SessionSnapshot.workspace(from: model))
+
+    let restored = SessionSnapshot.projectRuntimes(from: try store.load())
+    let web = try #require(restored.first { $0.name == "web" })
+    web.tabList.newTab()
+    let newTabDir = web.tabList.activeTree.layout.surfaces.first?.workingDir
+    #expect(newTabDir == "/tmp/web")
+}
+
 @Test func workspaceRoundTripPreservesActiveProjectIndex() throws {
     let model = WorkspaceModel()
     _ = model.addProject(name: "web", rootPath: "/tmp/web")

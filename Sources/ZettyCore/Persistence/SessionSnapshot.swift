@@ -88,7 +88,9 @@ public enum SessionSnapshot {
         workspace.projects.map { project in
             let session = project.sessions.first
             let trees = paneTrees(from: session?.tabs ?? [])
-            let tabList = TabList(restoring: trees, activeIndex: session?.activeTabIndex ?? 0) ?? TabList()
+            let tabList = TabList(restoring: trees, activeIndex: session?.activeTabIndex ?? 0,
+                                  defaultWorkingDir: project.rootPath)
+                ?? TabList(defaultWorkingDir: project.rootPath)
             return ProjectRuntime(
                 name: project.name,
                 rootPath: project.rootPath,
