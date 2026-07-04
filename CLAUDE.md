@@ -86,8 +86,10 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
   survive quit/relaunch (quit survives, close kills, startup reaps crash
   orphans). Attach strips `ZMX_SESSION` (inherited from a zmx-backed terminal
   it makes `zmx attach` kill that session); reattached panes get a one-shot
-  resize nudge so TUIs repaint. Settings toggle can install zmx; details in
-  [`AGENTS.md`](AGENTS.md).
+  resize nudge so TUIs repaint. Settings toggle can install zmx. Companion key
+  `restore-scrollback` (default true) replays zmx history into reattached
+  panes via a generated wrapper script (`~/.zetty/scrollback-restore.sh`) so
+  scrollback survives relaunch. Details in [`AGENTS.md`](AGENTS.md).
 - **Baked-in ghostty defaults** (user directives win): `shell-integration =
   zsh`, `shell-integration-features = ssh-env,ssh-terminfo`.
 - **`prefix` / `bind` / `copy-bind`** — the tmux-style prefix-key layer.

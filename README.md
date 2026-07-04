@@ -25,7 +25,9 @@ by the tool it's running.
   motions, visual selection, and yank-to-clipboard, rendered as a native
   Ghostty selection.
 - **Session persistence** — with `preserve-sessions` enabled, panes run inside
-  [zmx](https://zmx.sh) sessions that survive app quit/relaunch.
+  [zmx](https://zmx.sh) sessions that survive app quit/relaunch, and
+  reattached panes replay their full scrollback history (colors intact) so
+  scrolling up works as if the app never quit.
 - **AI agent status** — hook-driven status dots per tab and per project:
   green = running, yellow = needs attention, dim = idle — with optional
   sound / Dock badge / Notification Center alerts when an agent needs you.
@@ -182,6 +184,7 @@ seeds a documented starter file on first launch. Format is plain
 | `theme-dark` / `theme-light` | `Twilight` / `Daylight` | Scheme per appearance axis |
 | `sidebar-position` | `left` | Window side for the project sidebar |
 | `preserve-sessions` | `false` | Keep panes alive across quit/relaunch (requires zmx) |
+| `restore-scrollback` | `true` | Replay preserved panes' scrollback history on relaunch (with `preserve-sessions`) |
 | `confirm-quit` | `true` | Ask before quitting |
 | `notify-sound` / `notify-badge` / `notify-system` | `true` | Agent needs-attention alerts |
 | `editor` | — | App used by Settings → "Open in Editor" |
@@ -215,8 +218,10 @@ To enable, either:
 
 Once enabled, every pane runs inside its own zmx session:
 
-- **Quit survives** — relaunching reattaches every pane with its scrollback
-  and running programs intact (TUIs get a resize nudge so they repaint).
+- **Quit survives** — relaunching reattaches every pane with its running
+  programs intact (TUIs get a resize nudge so they repaint), and replays the
+  pane's full scrollback history, colors included, so scrolling up works as
+  if the app never quit (`restore-scrollback = false` disables the replay).
 - **Close kills** — explicitly closing a pane ends its session.
 - Crash leftovers are reaped once at startup; Settings offers a manual
   kill-all too.

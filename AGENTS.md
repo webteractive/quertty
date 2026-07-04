@@ -102,6 +102,16 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves + applies i
   - **Repaint nudge** — zmx replays screen contents but a running TUI paints
     only deltas, so a reattached pane stays half-drawn; ~1s after a pane's
     surface appears it is shrunk ~20pt and restored (SIGWINCH → full repaint).
+  - **Scrollback restore** — `restore-scrollback` (default true): panes launch
+    through a generated wrapper (`~/.zetty/scrollback-restore.sh`, contents in
+    `SessionPersistence.restoreScriptContents`, written idempotently by
+    `ScrollbackRestore.ensureScript()`) that replays `zmx history <session>
+    --vt` into the surface before exec'ing the attach — full scrollback with
+    attributes survives quit/relaunch. Plain-token invocation (`/bin/sh
+    <script> <zmx> <session>`) because ghostty's `command` parser can't be
+    relied on for quote grouping; the script's `unset ZMX_SESSION` covers the
+    strip for both zmx calls. Script write failure falls back to the bare
+    attach (session preserved, replay lost).
   - **Title persistence** — zmx never replays the title escape sequence, so
     each surface's last emitted title persists as `Surface.lastTitle` in
     `workspace.json` and seeds the tab name until the program emits a fresh
