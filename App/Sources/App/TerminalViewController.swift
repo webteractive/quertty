@@ -1071,6 +1071,7 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "⤒", label: "Resize Pane Up", kbd: "⌥⌘↑") { [weak self] in self?.resizePaneUp(nil) },
             PaletteCommand(glyph: "⤓", label: "Resize Pane Down", kbd: "⌥⌘↓") { [weak self] in self?.resizePaneDown(nil) },
             PaletteCommand(glyph: "×", label: "Close Pane", kbd: "⌘W") { [weak self] in self?.closePane(nil) },
+            PaletteCommand(glyph: "↗", label: "Break Pane into Tab", kbd: "⌥⌘T") { [weak self] in self?.breakPaneIntoTab(nil) },
             PaletteCommand(glyph: "⊗", label: "Close Tab", kbd: "⇧⌘W") { [weak self] in self?.closeTab(nil) },
             PaletteCommand(glyph: "→", label: "Next Tab", kbd: "⌘}") { [weak self] in self?.selectNextTab(nil) },
             PaletteCommand(glyph: "←", label: "Previous Tab", kbd: "⌘{") { [weak self] in self?.selectPreviousTab(nil) },
@@ -1286,6 +1287,27 @@ final class TerminalViewController: NSViewController {
             }
             onWorkspaceDidChange?()
             return .success(SessionPersistence.shortID(for: focused))
+        } catch {
+            return .failure(.noSuchPane(error.localizedDescription))
+        }
+    }
+
+    /// Break the targeted pane into a new adjacent tab (CLI `break`), returning
+    /// the moved pane's short id. Fails when the pane's tab has a single pane.
+    func breakPaneToTab(target: PaneSelector) -> Result<String, ControlError> {
+        do {
+            let pane = try target.resolve(in: statusSnapshot().panes)
+            guard let location = locate(shortID: pane.id) else {
+                return .failure(.noSuchPane("pane \(pane.id) not found"))
+            }
+            focusPane(at: location)
+            guard workspace.activeTabList.breakFocusedPaneIntoNewTab() else {
+                return .failure(.noSuchPane("pane \(pane.id) is the only pane in its tab"))
+            }
+            refreshTabBar()
+            refreshSidebar()
+            rebuildAndFocus()
+            return .success(pane.id)
         } catch {
             return .failure(.noSuchPane(error.localizedDescription))
         }
@@ -1916,6 +1938,7 @@ final class TerminalViewController: NSViewController {
             focusedSurfaceID: paneTree.focusedSurfaceID,
             showsClose: showsClose,
             onClose: { [weak self] id in self?.closePane(surfaceID: id) },
+            onBreak: { [weak self] id in self?.breakPane(surfaceID: id) },
             onRatioChange: { [weak self] path, ratio in
                 // Write the dragged divider position back to the model (no
                 // rebuild — the view already shows it) and autosave.
@@ -2005,6 +2028,9 @@ extension TerminalViewController: NSMenuItemValidation {
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(removeProject(_:)) {
             return workspace.projects.count > 1
+        }
+        if menuItem.action == #selector(breakPaneIntoTab(_:)) {
+            return workspace.activeTabList.activeTree.layout.surfaces.count > 1
         }
         return true
     }

@@ -41,6 +41,7 @@ final class SurfaceNodeView: NSView {
         focusedSurfaceID: UUID?,
         showsClose: Bool = false,
         onClose: ((UUID) -> Void)? = nil,
+        onBreak: ((UUID) -> Void)? = nil,
         nodePath: [SplitBranch] = [],
         onRatioChange: (([SplitBranch], Double) -> Void)? = nil
     ) {
@@ -52,6 +53,7 @@ final class SurfaceNodeView: NSView {
             focusedSurfaceID: focusedSurfaceID,
             showsClose: showsClose,
             onClose: onClose,
+            onBreak: onBreak,
             nodePath: nodePath,
             onRatioChange: onRatioChange
         )
@@ -84,6 +86,7 @@ final class SurfaceNodeView: NSView {
         focusedSurfaceID: UUID?,
         showsClose: Bool,
         onClose: ((UUID) -> Void)?,
+        onBreak: ((UUID) -> Void)?,
         nodePath: [SplitBranch],
         onRatioChange: (([SplitBranch], Double) -> Void)?
     ) {
@@ -96,7 +99,8 @@ final class SurfaceNodeView: NSView {
                 terminalView: terminalView,
                 isFocused: surface.id == focusedSurfaceID,
                 showsClose: showsClose,
-                onClose: onClose
+                onClose: onClose,
+                onBreak: onBreak
             )
             container.translatesAutoresizingMaskIntoConstraints = false
             addSubview(container)
@@ -117,6 +121,7 @@ final class SurfaceNodeView: NSView {
                 focusedSurfaceID: focusedSurfaceID,
                 showsClose: showsClose,
                 onClose: onClose,
+                onBreak: onBreak,
                 nodePath: nodePath,
                 onRatioChange: onRatioChange
             )
@@ -150,7 +155,9 @@ private final class LeafContainerView: NSView {
     let surfaceID: UUID
     private var isFocused: Bool
     private var onClose: ((UUID) -> Void)?
+    private var onBreak: ((UUID) -> Void)?
     private var closeButton: NSButton?
+    private var breakButton: NSButton?
     private var statusDot: NSView?
 
     init(
@@ -158,11 +165,13 @@ private final class LeafContainerView: NSView {
         terminalView: NSView,
         isFocused: Bool,
         showsClose: Bool,
-        onClose: ((UUID) -> Void)?
+        onClose: ((UUID) -> Void)?,
+        onBreak: ((UUID) -> Void)? = nil
     ) {
         self.surfaceID = surfaceID
         self.isFocused = isFocused
         self.onClose = onClose
+        self.onBreak = onBreak
         super.init(frame: .zero)
         wantsLayer = true
         // Rounded, themed pane surface (handoff: 10pt radius panes on bg1).
@@ -186,6 +195,8 @@ private final class LeafContainerView: NSView {
         if showsClose {
             addStatusDot()
             addCloseButton()
+            addBreakButton()
+            menu = makePaneMenu()
         }
 
         updateBorder()
@@ -258,6 +269,60 @@ private final class LeafContainerView: NSView {
     @objc private func closeButtonTapped() {
         onClose?(surfaceID)
     }
+
+    /// A break-into-tab button that sits just left of the × in the gutter,
+    /// shown alongside the close button when the pane is closable.
+    private func addBreakButton() {
+        let button = NSButton(frame: .zero)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.bezelStyle = .circular
+        button.isBordered = false
+        button.title = ""
+        if let image = NSImage(systemSymbolName: "arrow.up.forward.square",
+                               accessibilityDescription: "Break pane into tab") {
+            button.image = image
+        } else {
+            button.title = "↗"
+        }
+        button.imageScaling = .scaleProportionallyDown
+        button.contentTintColor = ZTheme.current.fg3Color
+        button.toolTip = "Break pane into tab"
+        button.target = self
+        button.action = #selector(breakButtonTapped)
+
+        addSubview(button)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 18),
+            button.heightAnchor.constraint(equalToConstant: 18),
+            button.topAnchor.constraint(equalTo: topAnchor, constant: 4),
+            // Sit just left of the × (× trailing = -4, width 18, +4 gap).
+            button.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -26),
+        ])
+
+        breakButton = button
+    }
+
+    @objc private func breakButtonTapped() {
+        onBreak?(surfaceID)
+    }
+
+    /// Right-click menu for the pane chrome (gutter). The terminal view fills
+    /// the container below the gutter and handles its own right-click, so this
+    /// menu appears only on the pane chrome — not over the terminal content.
+    private func makePaneMenu() -> NSMenu {
+        let menu = NSMenu()
+        let breakItem = NSMenuItem(title: "Break Pane into Tab",
+                                   action: #selector(breakButtonTapped),
+                                   keyEquivalent: "")
+        breakItem.target = self
+        menu.addItem(breakItem)
+        let closeItem = NSMenuItem(title: "Close Pane",
+                                   action: #selector(closeButtonTapped),
+                                   keyEquivalent: "")
+        closeItem.target = self
+        menu.addItem(closeItem)
+        return menu
+    }
 }
 
 // MARK: - RatioSplitView
@@ -291,6 +356,7 @@ private final class RatioSplitView: NSSplitView, NSSplitViewDelegate {
         focusedSurfaceID: UUID?,
         showsClose: Bool = false,
         onClose: ((UUID) -> Void)? = nil,
+        onBreak: ((UUID) -> Void)? = nil,
         nodePath: [SplitBranch] = [],
         onRatioChange: (([SplitBranch], Double) -> Void)? = nil
     ) {
@@ -309,6 +375,7 @@ private final class RatioSplitView: NSSplitView, NSSplitViewDelegate {
             focusedSurfaceID: focusedSurfaceID,
             showsClose: showsClose,
             onClose: onClose,
+            onBreak: onBreak,
             nodePath: nodePath + [.first],
             onRatioChange: onRatioChange
         )
@@ -318,6 +385,7 @@ private final class RatioSplitView: NSSplitView, NSSplitViewDelegate {
             focusedSurfaceID: focusedSurfaceID,
             showsClose: showsClose,
             onClose: onClose,
+            onBreak: onBreak,
             nodePath: nodePath + [.second],
             onRatioChange: onRatioChange
         )

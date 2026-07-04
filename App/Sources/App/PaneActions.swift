@@ -101,6 +101,27 @@ extension TerminalViewController {
         }
     }
 
+    // MARK: - Break action
+
+    /// Move the focused pane into a new tab right after the current one.
+    /// No-op if it is the only pane in the tab. Prefix `!` · ⌥⌘T · palette · menu.
+    @objc func breakPaneIntoTab(_ sender: Any?) {
+        guard workspace.activeTabList.breakFocusedPaneIntoNewTab() else { return }
+        refreshTabBar()
+        refreshSidebar()
+        rebuildAndFocus()
+    }
+
+    /// Break the pane identified by `surfaceID` (called by the per-pane button
+    /// and the pane context menu): focus it first, then break.
+    func breakPane(surfaceID: UUID) {
+        paneTree.focus(surfaceID)
+        guard workspace.activeTabList.breakFocusedPaneIntoNewTab() else { return }
+        refreshTabBar()
+        refreshSidebar()
+        rebuildAndFocus()
+    }
+
     // MARK: - Helpers
 
     /// Rebuild the split-view hierarchy, prune stale registry entries, and

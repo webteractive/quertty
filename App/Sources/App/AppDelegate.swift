@@ -895,6 +895,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case .success(let pane): return .pane(pane)
             case .failure(let error): return .error(error.localizedDescription)
             }
+        case .breakPane(let target):
+            switch tvc.breakPaneToTab(target: target) {
+            case .success(let pane): return .pane(pane)
+            case .failure(let error): return .error(error.localizedDescription)
+            }
         case .focus(let target):
             if let message = tvc.focusPane(target: target) {
                 return .error(message)
@@ -1097,6 +1102,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         closeTab.keyEquivalentModifierMask = [.command, .shift]
         shellMenu.addItem(closeTab)
+
+        // "Break Pane into Tab"  ⌥⌘T
+        let breakPane = NSMenuItem(
+            title: "Break Pane into Tab",
+            action: #selector(TerminalViewController.breakPaneIntoTab(_:)),
+            keyEquivalent: "t"
+        )
+        breakPane.keyEquivalentModifierMask = [.command, .option]
+        shellMenu.addItem(breakPane)
 
         shellMenu.addItem(.separator())
 

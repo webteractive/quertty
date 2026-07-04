@@ -185,6 +185,7 @@ extension TerminalViewController {
         case .cyclePanes: cyclePaneFocus(nil)
         case .closePane: closePane(nil)
         case .zoomPane: zoomPane(nil)
+        case .breakPane: breakPaneIntoTab(nil)
 
         // Tabs
         case .newTab: newTab(nil)
