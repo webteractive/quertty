@@ -48,15 +48,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Installs/removes agent hooks in each harness's config.
     private let hookInstaller = HookInstaller()
 
-    /// The persistent workspace store backed by `~/Library/Application Support/zetty/`.
-    private lazy var workspaceStore: WorkspaceStore = {
+    /// `~/Library/Application Support/zetty/` (created on first use) — shared
+    /// by the workspace and project-settings stores.
+    private lazy var appSupportDirectory: URL = {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         let dir = appSupport.appendingPathComponent("zetty")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return WorkspaceStore(directory: dir)
+        return dir
     }()
+
+    /// The persistent workspace store backed by `~/Library/Application Support/zetty/`.
+    private lazy var workspaceStore = WorkspaceStore(directory: appSupportDirectory)
+
+    /// Private per-project settings (identity + overrides), keyed by rootPath.
+    private lazy var projectSettingsStore = ProjectSettingsStore(directory: appSupportDirectory)
+
+    /// In-memory project settings; loaded at launch, saved on every edit.
+    private(set) var projectSettings = ProjectSettingsFile()
 
     func applicationDidFinishLaunching(_: Notification) {
         // TerminalController internally calls ghostty_init(0, nil) exactly once
@@ -96,6 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tvc.sidebarPosition = appConfig.sidebarPosition
         let restoredFromDisk = restoreWorkspace(into: tvc)
         terminalViewController = tvc
+        projectSettings = projectSettingsStore.load()
+        applyProjectNameOverrides(to: tvc)
         // Autosave on every structural change (debounced), so the on-disk
         // workspace always reflects the current layout — not just on clean quit.
         tvc.onWorkspaceDidChange = { [weak self] in self?.scheduleSave() }
@@ -121,6 +133,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tvc.onAgentNeedsAttention = { [weak self] surface, kind, project in
             self?.agentNeedsAttention(surface: surface, kind: kind, project: project)
         }
+        tvc.badgeEligible = { [weak self] project in
+            self?.resolvedSettings(for: project).notifyBadge ?? true
+        }
+        tvc.projectIdentity = { [weak self] project in
+            guard let self else { return (nil, nil) }
+            let resolved = self.resolvedSettings(for: project)
+            return (ZTheme.projectColor(id: resolved.colorID), resolved.icon)
+        }
+        tvc.onRenameProject = { [weak self] project in self?.promptRenameProject(project) }
+        tvc.onOpenProjectSettings = { [weak self] project in self?.presentProjectSettings(project) }
         tvc.onAttentionCountChanged = { [weak self] count in
             guard let self else { return }
             NSApp.dockTile.badgeLabel = (self.appConfig.notifyBadge && count > 0) ? "\(count)" : nil
@@ -387,6 +409,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
     }
 
+    // MARK: - Per-project settings
+
+    /// What applies to `project` right now (private override → global).
+    /// The fallback name is the folder name, NOT the runtime name — the
+    /// runtime name may already carry the override.
+    func resolvedSettings(for project: ProjectRuntime) -> ResolvedProjectSettings {
+        ProjectSettingsResolver.resolve(
+            projectSettings.settings(for: project.rootPath),
+            fallbackName: (project.rootPath as NSString).lastPathComponent,
+            global: appConfig)
+    }
+
+    /// Persists new settings for `project` and re-applies everything they
+    /// influence: runtime name (+ sidebar re-sort), session preservation for
+    /// future panes, and chrome refresh. Notifications are resolved at fire
+    /// time, so no re-apply is needed there.
+    func updateProjectSettings(_ new: ProjectSettings, for project: ProjectRuntime) {
+        projectSettings.set(new, for: project.rootPath)
+        try? projectSettingsStore.save(projectSettings)
+        guard let tvc = terminalViewController else { return }
+        if let index = tvc.workspace.projects.firstIndex(where: { $0 === project }) {
+            tvc.workspace.rename(projectAt: index, to: resolvedSettings(for: project).name)
+        }
+        applySessionPreservation(to: tvc)
+        tvc.refreshSidebar()
+        tvc.refreshTabBar()
+        scheduleSave()   // runtime name persists via the workspace snapshot
+    }
+
+    /// "Project Settings…" sheet: identity + overrides for one project.
+    private func presentProjectSettings(_ project: ProjectRuntime) {
+        guard let window = terminalViewController?.view.window else { return }
+        ProjectSettingsSheet.present(
+            for: project.name,
+            current: projectSettings.settings(for: project.rootPath) ?? ProjectSettings(),
+            fallbackName: (project.rootPath as NSString).lastPathComponent,
+            on: window
+        ) { [weak self] edited in
+            self?.updateProjectSettings(edited, for: project)
+        }
+    }
+
+    /// "Rename…" prompt: an NSAlert sheet with a text field (the established
+    /// sheet pattern — see confirmRemoveProject). An empty submission clears
+    /// the override, restoring the folder name.
+    private func promptRenameProject(_ project: ProjectRuntime) {
+        guard let window = terminalViewController?.view.window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename Project"
+        alert.informativeText = "Leave empty to use the folder name (\((project.rootPath as NSString).lastPathComponent))."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSTextField(string: project.name)
+        field.frame = NSRect(x: 0, y: 0, width: 240, height: 24)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            var settings = self.projectSettings.settings(for: project.rootPath) ?? ProjectSettings()
+            let trimmed = field.stringValue.trimmingCharacters(in: .whitespaces)
+            settings.name = trimmed.isEmpty ? nil : trimmed
+            self.updateProjectSettings(settings, for: project)
+        }
+    }
+
+    /// Applies stored name overrides to the restored runtimes (called once
+    /// right after the workspace is restored, before the first sidebar render).
+    /// Iterates a snapshot by identity — each rename resorts the array, so
+    /// positional indices from before the rename would go stale.
+    private func applyProjectNameOverrides(to tvc: TerminalViewController) {
+        for project in Array(tvc.workspace.projects) {
+            let resolved = resolvedSettings(for: project)
+            if resolved.name != project.name,
+               let index = tvc.workspace.projects.firstIndex(where: { $0 === project }) {
+                tvc.workspace.rename(projectAt: index, to: resolved.name)
+            }
+        }
+    }
+
     // MARK: - Session preservation
 
     /// Threads session preservation into the terminal VC: when enabled and zmx
@@ -399,15 +500,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func applySessionPreservation(to tvc: TerminalViewController) {
         let zmxPath = ZmxRunner.locate()
 
-        if appConfig.preserveSessions, let zmx = zmxPath {
+        // The provider must be installed if ANY project can preserve — the
+        // global toggle or a per-project override forcing it on. The
+        // per-pane decision happens inside the closure at spawn time.
+        let anyPreserve = appConfig.preserveSessions || projectSettings.anyPreserveOverrideOn
+        if anyPreserve, let zmx = zmxPath {
             let restoreScript = appConfig.restoreScrollback ? ScrollbackRestore.ensureScript() : nil
-            tvc.sessionCommandProvider = { id in
-                SessionPersistence.attachCommand(
+            tvc.sessionCommandProvider = { [weak self, weak tvc] id in
+                guard let self else { return nil }
+                // Resolve the owning project's effective value; a surface not
+                // yet in the model (shouldn't happen) follows the global.
+                if let project = tvc?.workspace.project(containing: id) {
+                    guard self.resolvedSettings(for: project).preserveSessions else { return nil }
+                } else {
+                    guard self.appConfig.preserveSessions else { return nil }
+                }
+                return SessionPersistence.attachCommand(
                     zmxPath: zmx, surfaceID: id, restoreScriptPath: restoreScript)
             }
         } else {
             tvc.sessionCommandProvider = nil
-            if appConfig.preserveSessions { presentZmxMissingAlertOnce() }
+            if anyPreserve { presentZmxMissingAlertOnce() }
         }
 
         if let zmx = zmxPath {
@@ -493,21 +606,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// attention sound, Dock badge (follows the attention count, applied in
     /// the count callback), and a macOS notification — posted only while
     /// Zetty is in the background (in front, the sound + yellow dots
-    /// already tell the story).
-    private func agentNeedsAttention(surface: Surface, kind: AgentKind, project: String) {
-        if appConfig.notifySound {
+    /// already tell the story). Gating uses the project's RESOLVED settings
+    /// (per-project override folded over the global notify-* keys).
+    private func agentNeedsAttention(surface: Surface, kind: AgentKind, project: ProjectRuntime) {
+        let resolved = resolvedSettings(for: project)
+        if resolved.notifySound {
             NSSound(named: "Ping")?.play()
             if !NSApp.isActive {
                 NSApp.requestUserAttention(.informationalRequest)   // one Dock bounce
             }
         }
-        guard appConfig.notifySystem, !NSApp.isActive else { return }
+        guard resolved.notifySystem, !NSApp.isActive else { return }
         let center = UNUserNotificationCenter.current()
         center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
             guard granted else { return }
             let content = UNMutableNotificationContent()
             content.title = "\(kind.displayName.capitalized) needs attention"
-            content.body = "\(project) — \(surface.workingDir)"
+            content.body = "\(project.name) — \(surface.workingDir)"
             content.userInfo = ["pane": SessionPersistence.shortID(for: surface.id)]
             center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
         }

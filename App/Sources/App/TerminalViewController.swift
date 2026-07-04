@@ -41,7 +41,9 @@ final class TerminalViewController: NSViewController {
     private let registry = SurfaceRegistry()
 
     /// Workspace model — ordered list of projects, each owning its own TabList.
-    private var workspace = WorkspaceModel()
+    /// Read by AppDelegate (per-project settings resolution at spawn time and
+    /// on settings edits); mutation stays in this class.
+    private(set) var workspace = WorkspaceModel()
 
     /// The logical pane tree for the ACTIVE tab in the ACTIVE project.  Mutate
     /// this, then call `rebuildSurfaceNodeView()`.  Declared `internal` so the
@@ -461,6 +463,16 @@ final class TerminalViewController: NSViewController {
         sidebar.onRemoveProject = { [weak self] index in
             self?.confirmRemoveProject(at: index)
         }
+
+        sidebar.onRenameProject = { [weak self] index in
+            guard let self, self.workspace.projects.indices.contains(index) else { return }
+            self.onRenameProject?(self.workspace.projects[index])
+        }
+
+        sidebar.onOpenProjectSettings = { [weak self] index in
+            guard let self, self.workspace.projects.indices.contains(index) else { return }
+            self.onOpenProjectSettings?(self.workspace.projects[index])
+        }
     }
 
     /// (Re)pins the sidebar, separator, resize handle, and content container
@@ -785,8 +797,25 @@ final class TerminalViewController: NSViewController {
     /// matches the event's `cwd`, then refreshes the status dots.
     /// Fired when a pane's agent transitions INTO needs-attention (never
     /// during the startup replay). Payload: pane surface, agent kind, and the
-    /// owning project's name.
-    var onAgentNeedsAttention: ((Surface, AgentKind, String) -> Void)?
+    /// owning project (per-project notification overrides are resolved by the
+    /// receiver).
+    var onAgentNeedsAttention: ((Surface, AgentKind, ProjectRuntime) -> Void)?
+
+    /// Per-project dock-badge gate (nil → everything counts). The in-app
+    /// bell/inbox always sees every unread pane — only the Dock badge is
+    /// filtered (a suppressed project shouldn't nag from the Dock).
+    var badgeEligible: ((ProjectRuntime) -> Bool)?
+
+    /// Resolves a project's identity (color + custom glyph) from its
+    /// settings; nil closure or nil fields → default rendering.
+    var projectIdentity: ((ProjectRuntime) -> (color: NSColor?, glyph: String?))?
+
+    /// Sidebar "Rename…" — payload is the project runtime (the receiver
+    /// resolves and persists the name override).
+    var onRenameProject: ((ProjectRuntime) -> Void)?
+
+    /// Sidebar "Project Settings…" — payload is the project runtime.
+    var onOpenProjectSettings: ((ProjectRuntime) -> Void)?
 
     /// Fired whenever the number of attention panes changes (Dock badge).
     var onAttentionCountChanged: ((Int) -> Void)?
@@ -807,7 +836,7 @@ final class TerminalViewController: NSViewController {
                             changed = true
                             if notify, next.status == .needsAttention, previous != .needsAttention,
                                let kind = next.kind {
-                                onAgentNeedsAttention?(surface, kind, project.name)
+                                onAgentNeedsAttention?(surface, kind, project)
                             }
                         }
                     }
@@ -829,7 +858,8 @@ final class TerminalViewController: NSViewController {
     /// Recomputes the UNREAD attention count and fires the callback — always,
     /// so a config reload can re-apply Dock-badge gating even when the count
     /// itself is unchanged (re-setting the same badge is free). Syncs the
-    /// inbox first so ended attention episodes drop their read marks.
+    /// inbox first so ended attention episodes drop their read marks. The
+    /// bell shows every unread pane; the Dock badge only badge-eligible ones.
     func publishAttentionCount() {
         let needsAttention = Set(
             workspace.projects
@@ -838,9 +868,15 @@ final class TerminalViewController: NSViewController {
                 .map(\.id)
         )
         attentionInbox.update(needsAttention: needsAttention)
-        let count = attentionInbox.unreadCount
-        sidebarView?.updateBell(count: count)
-        onAttentionCountChanged?(count)
+        sidebarView?.updateBell(count: attentionInbox.unreadCount)
+
+        let unread = attentionInbox.unread
+        let badgeCount = workspace.projects
+            .filter { badgeEligible?($0) ?? true }
+            .flatMap { $0.tabList.trees.flatMap { $0.layout.surfaces } }
+            .filter { unread.contains($0.id) }
+            .count
+        onAttentionCountChanged?(badgeCount)
     }
 
     /// The bell's menu: every UNREAD needs-attention pane; selecting one jumps
@@ -1482,6 +1518,7 @@ final class TerminalViewController: NSViewController {
             // Single-tab projects carry their pane's tool logo on the row
             // itself (there are no tab child rows to show it on).
             let projectIcon = trees.count == 1 ? agentIcon(for: trees[0].focusedSurface) : nil
+            let identity = projectIdentity?(project)
             return SidebarProject(
                 name: project.name,
                 isPinned: project.isPinned,
@@ -1489,7 +1526,9 @@ final class TerminalViewController: NSViewController {
                 tabStatuses: tabStatuses,
                 tabIcons: tabIcons,
                 icon: projectIcon,
-                status: rollup
+                status: rollup,
+                projectColor: identity?.color,
+                customGlyph: identity?.glyph
             )
         }
         sidebarView?.update(

@@ -333,6 +333,37 @@ struct ZTheme {
         }
     }
 
+    // MARK: Project identity palette
+
+    /// Curated per-project colors (design doc: a fixed palette, not free hex).
+    /// Deliberately offset from the semantic status hues — green (running),
+    /// yellow (attention), red (error), purple (git) — and from the accent,
+    /// which stays reserved for focus/brand. Each id carries an appearance
+    /// pair: a bright variant for dark schemes and a deeper one for light
+    /// schemes, so the color stays legible on either `bg1`. Stored in
+    /// project settings by `id` so the hex can be tuned later without
+    /// re-assigning anyone's projects.
+    static let projectPalette: [(id: String, dark: String, light: String)] = [
+        ("sky",    "6db3f2", "2d6fb5"),
+        ("teal",   "5fc4c4", "1f8a8a"),
+        ("moss",   "93c47d", "4e7d3a"),
+        ("sand",   "d4b483", "8f6f3f"),
+        ("orange", "e8a06a", "b5651f"),
+        ("pink",   "e895bd", "b54f82"),
+        ("mauve",  "c39fdd", "7d4fa8"),
+        ("steel",  "9fb0c1", "5a6b7d"),
+    ]
+
+    /// The NSColor for a stored palette id under the CURRENT appearance
+    /// (bright variant on dark schemes, deep variant on light); nil for
+    /// nil/unknown ids (a removed palette entry degrades to "no color",
+    /// never an error). Reactive: callers re-resolve on every render, and
+    /// chrome re-renders on scheme/appearance changes.
+    static func projectColor(id: String?) -> NSColor? {
+        guard let id, let entry = projectPalette.first(where: { $0.id == id }) else { return nil }
+        return color(current.isDark ? entry.dark : entry.light)
+    }
+
     // MARK: Hex helper
 
     /// Parses a 6-digit hex string (with or without a leading `#`) into an

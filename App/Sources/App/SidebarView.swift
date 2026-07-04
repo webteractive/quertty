@@ -15,6 +15,8 @@ struct SidebarProject {
     let tabIcons: [NSImage?]             // parallel to tabTitles (tool logo per tab)
     let icon: NSImage?                   // single-tab projects: the pane's tool logo
     let status: AgentStatus?             // project roll-up (most-severe across tabs)
+    let projectColor: NSColor?           // per-project identity color (nil = default)
+    let customGlyph: String?             // SF Symbol overriding the diamond (nil = default)
 }
 
 /// Maps an agent status to its status-dot color, or nil for "no agent".
@@ -100,6 +102,12 @@ final class SidebarView: NSView {
     /// Called with the project index when the user picks "Remove Project…"
     /// from a project row's context menu.
     var onRemoveProject: ((Int) -> Void)?
+
+    /// Called with the project index for the context menu's "Rename…".
+    var onRenameProject: ((Int) -> Void)?
+
+    /// Called with the project index for the context menu's "Project Settings…".
+    var onOpenProjectSettings: ((Int) -> Void)?
 
     // MARK: - Private state
 
@@ -521,6 +529,18 @@ final class SidebarView: NSView {
         guard projects.indices.contains(projectIndex) else { return }
         onRemoveProject?(projectIndex)
     }
+
+    @objc private func renameProjectMenuClicked(_ sender: NSMenuItem) {
+        let projectIndex = sender.tag
+        guard projects.indices.contains(projectIndex) else { return }
+        onRenameProject?(projectIndex)
+    }
+
+    @objc private func projectSettingsMenuClicked(_ sender: NSMenuItem) {
+        let projectIndex = sender.tag
+        guard projects.indices.contains(projectIndex) else { return }
+        onOpenProjectSettings?(projectIndex)
+    }
 }
 
 // MARK: - NSMenuDelegate (project row context menu)
@@ -533,6 +553,22 @@ extension SidebarView: NSMenuDelegate {
               let obj = outlineView.item(atRow: row) as? OutlineItem,
               case .project(let p) = obj.kind,
               projects.indices.contains(p) else { return }
+
+        let rename = NSMenuItem(title: "Rename\u{2026}",
+                                action: #selector(renameProjectMenuClicked(_:)),
+                                keyEquivalent: "")
+        rename.target = self
+        rename.tag = p
+        menu.addItem(rename)
+
+        let settings = NSMenuItem(title: "Project Settings\u{2026}",
+                                  action: #selector(projectSettingsMenuClicked(_:)),
+                                  keyEquivalent: "")
+        settings.target = self
+        settings.tag = p
+        menu.addItem(settings)
+
+        menu.addItem(.separator())
 
         let remove = NSMenuItem(title: "Remove Project\u{2026}",
                                 action: #selector(removeProjectMenuClicked(_:)),
@@ -691,6 +727,8 @@ extension SidebarView: NSOutlineViewDelegate {
                 isActive: p == activeProject,
                 agentStatus: project.status,
                 toolIcon: project.icon,
+                projectColor: project.projectColor,
+                customGlyph: project.customGlyph,
                 projectIndex: p,
                 target: self,
                 action: #selector(pinButtonClicked(_:))
@@ -893,7 +931,9 @@ private final class ProjectCellView: NSTableCellView {
     required init?(coder _: NSCoder) { fatalError("not supported") }
 
     func configure(name: String, isPinned: Bool, isActive: Bool, agentStatus: AgentStatus?,
-                   toolIcon: NSImage? = nil, projectIndex: Int, target: AnyObject, action: Selector) {
+                   toolIcon: NSImage? = nil, projectColor: NSColor? = nil,
+                   customGlyph: String? = nil, projectIndex: Int,
+                   target: AnyObject, action: Selector) {
         nameLabel.stringValue = name
         nameLabel.textColor = isActive ? ZTheme.current.fgColor : ZTheme.current.fg2Color
 
@@ -904,12 +944,17 @@ private final class ProjectCellView: NSTableCellView {
         toolIconWidth.constant = toolIcon == nil ? 0 : 13
         toolIconGap.constant = toolIcon == nil ? 0 : 6
 
-        // Diamond project glyph: filled when an agent is present (tinted by its
-        // status) or when active; dim outline otherwise.
+        // Project glyph: a custom SF Symbol when set, else the diamond
+        // (filled when an agent is present or the project is active). Tint
+        // precedence: agent status > project color > active accent / dim —
+        // status colors carry meaning and always win.
         let hasAgent = agentStatus != nil
-        let glyph = (hasAgent || isActive) ? "diamond.fill" : "diamond"
-        glyphView.image = NSImage(systemSymbolName: glyph, accessibilityDescription: "Project")
+        let defaultGlyph = (hasAgent || isActive) ? "diamond.fill" : "diamond"
+        glyphView.image = customGlyph.flatMap {
+            NSImage(systemSymbolName: $0, accessibilityDescription: "Project")
+        } ?? NSImage(systemSymbolName: defaultGlyph, accessibilityDescription: "Project")
         glyphView.contentTintColor = agentStatusColor(agentStatus)
+            ?? projectColor
             ?? (isActive ? ZTheme.current.accentColor : ZTheme.current.fg3Color)
 
         // Pinned rows use a filled accent star; unpinned rows show a dim hollow star.
