@@ -52,6 +52,14 @@ public final class TabList {
         set { trees[activeIndex] = newValue }
     }
 
+    /// Replaces the whole tab set with another list's (layout-template
+    /// application). `other` is never empty by TabList's own invariant, so
+    /// this list's invariant holds too.
+    public func replaceTrees(from other: TabList) {
+        trees = other.trees
+        activeIndex = other.activeIndex
+    }
+
     /// Appends a new single-pane tab and makes it active.
     public func newTab() {
         trees.append(TabList.freshTree(workingDir: defaultWorkingDir))

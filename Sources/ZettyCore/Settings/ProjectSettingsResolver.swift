@@ -8,10 +8,18 @@ public struct ResolvedProjectSettings: Equatable, Sendable {
     public var name: String
     public var colorID: String?
     public var icon: String?
+    /// Per-project appearance/theme overrides, mirroring the global model
+    /// (appearance axis + a scheme per axis); nil fields → the global keys.
+    public var appearanceOverride: String?
+    public var themeDarkOverride: String?
+    public var themeLightOverride: String?
     public var preserveSessions: Bool
     public var notifySound: Bool
     public var notifyBadge: Bool
     public var notifySystem: Bool
+    /// Env vars for this project's panes (empty when unset — values never
+    /// come from the repo file).
+    public var env: [String: String]
 }
 
 public enum ProjectSettingsResolver {
@@ -44,10 +52,14 @@ public enum ProjectSettingsResolver {
             name: name,
             colorID: settings?.color,
             icon: settings?.icon,
+            appearanceOverride: settings?.appearanceOverride,
+            themeDarkOverride: settings?.themeDarkOverride,
+            themeLightOverride: settings?.themeLightOverride,
             preserveSessions: settings?.preserveSessionsOverride ?? global.preserveSessions,
             notifySound: notifySound,
             notifyBadge: notifyBadge,
-            notifySystem: notifySystem
+            notifySystem: notifySystem,
+            env: settings?.env ?? [:]
         )
     }
 }

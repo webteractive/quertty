@@ -105,3 +105,15 @@ import Testing
     #expect(list.trees.count == 3)
     #expect(list.activeIndex == 2)
 }
+
+@Test func replaceTreesSwapsTabSetAndClampsActive() {
+    let list = TabList(defaultWorkingDir: "/tmp/a")
+    list.newTab()                                    // 2 tabs, active = 1
+    let replacement = TabList(defaultWorkingDir: "/tmp/b")
+    list.replaceTrees(from: replacement)
+    #expect(list.trees.count == 1)
+    #expect(list.activeIndex == 0)
+    #expect(list.activeTree.layout.surfaces.first?.workingDir == "/tmp/b")
+    // Replacing from an empty list is impossible by construction (TabList is
+    // never empty), so no empty-guard case to test.
+}

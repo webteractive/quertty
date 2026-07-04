@@ -49,3 +49,24 @@ import Testing
         ProjectSettings(), fallbackName: "x", global: global)
     #expect(follow.notifySound == true && follow.notifyBadge == false && follow.notifySystem == true)
 }
+
+@Test func resolverPassesAppearanceAndThemeOverridesThrough() {
+    let unset = ProjectSettingsResolver.resolve(nil, fallbackName: "x", global: AppConfig())
+    #expect(unset.appearanceOverride == nil)
+    #expect(unset.themeDarkOverride == nil)
+    #expect(unset.themeLightOverride == nil)
+    let set = ProjectSettingsResolver.resolve(
+        ProjectSettings(appearanceOverride: "light", themeDarkOverride: "Ember",
+                        themeLightOverride: "Sakura"),
+        fallbackName: "x", global: AppConfig())
+    #expect(set.appearanceOverride == "light")
+    #expect(set.themeDarkOverride == "Ember")
+    #expect(set.themeLightOverride == "Sakura")
+}
+
+@Test func resolverReturnsEmptyEnvWhenUnsetAndMapWhenSet() {
+    #expect(ProjectSettingsResolver.resolve(nil, fallbackName: "x", global: AppConfig()).env == [:])
+    let resolved = ProjectSettingsResolver.resolve(
+        ProjectSettings(env: ["A": "1"]), fallbackName: "x", global: AppConfig())
+    #expect(resolved.env == ["A": "1"])
+}

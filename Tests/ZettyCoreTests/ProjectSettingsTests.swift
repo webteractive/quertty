@@ -76,3 +76,26 @@ import Foundation
                          atomically: true, encoding: .utf8)
     #expect(store.load() == ProjectSettingsFile())          // corrupt → empty, no throw
 }
+
+@Test func projectSettingsCarriesAppearanceAndThemeOverrides() throws {
+    let settings = ProjectSettings(
+        appearanceOverride: "dark", themeDarkOverride: "Ember", themeLightOverride: "Sakura")
+    #expect(!settings.isEmpty)
+    let decoded = try JSONDecoder().decode(
+        ProjectSettings.self, from: JSONEncoder().encode(settings))
+    #expect(decoded.appearanceOverride == "dark")
+    #expect(decoded.themeDarkOverride == "Ember")
+    #expect(decoded.themeLightOverride == "Sakura")
+    // The retired single-scheme key from the interim design is just an
+    // unknown key now — tolerated, dropped.
+    let legacy = #"{"themeOverride":"Ember"}"#.data(using: .utf8)!
+    #expect(try JSONDecoder().decode(ProjectSettings.self, from: legacy).isEmpty)
+}
+
+@Test func projectSettingsCarriesEnv() throws {
+    let settings = ProjectSettings(env: ["API_KEY": "abc 123", "DB_URL": "postgres://x"])
+    #expect(!settings.isEmpty)
+    let decoded = try JSONDecoder().decode(
+        ProjectSettings.self, from: JSONEncoder().encode(settings))
+    #expect(decoded.env?["API_KEY"] == "abc 123")
+}

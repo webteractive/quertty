@@ -11,25 +11,45 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     public var color: String?
     /// SF Symbol name for the row glyph; nil → the default diamond.
     public var icon: String?
+    /// Per-project appearance axis, mirroring the global `appearance` key
+    /// ("system" / "dark" / "light"); nil → follow the global appearance.
+    public var appearanceOverride: String?
+    /// Scheme displayName used while this project is active AND the effective
+    /// appearance is dark; nil → the global `theme-dark`. Validated app-side.
+    public var themeDarkOverride: String?
+    /// Light-axis counterpart of `themeDarkOverride` (global `theme-light`).
+    public var themeLightOverride: String?
     /// Tri-state override of the global `preserve-sessions` (nil = follow).
     public var preserveSessionsOverride: Bool?
     /// Tri-state notifications override: nil = follow the global
     /// notify-sound/badge/system keys; false = suppress all three for this
     /// project; true = force all three. The in-app bell is never gated.
     public var notificationsOverride: Bool?
+    /// Environment variables injected into this project's panes. Values live
+    /// ONLY here (the private per-user store) — the repo file carries names
+    /// at most (`ProjectFile.envNames`). New panes/sessions only.
+    public var env: [String: String]?
 
     public init(
         name: String? = nil,
         color: String? = nil,
         icon: String? = nil,
+        appearanceOverride: String? = nil,
+        themeDarkOverride: String? = nil,
+        themeLightOverride: String? = nil,
         preserveSessionsOverride: Bool? = nil,
-        notificationsOverride: Bool? = nil
+        notificationsOverride: Bool? = nil,
+        env: [String: String]? = nil
     ) {
         self.name = name
         self.color = color
         self.icon = icon
+        self.appearanceOverride = appearanceOverride
+        self.themeDarkOverride = themeDarkOverride
+        self.themeLightOverride = themeLightOverride
         self.preserveSessionsOverride = preserveSessionsOverride
         self.notificationsOverride = notificationsOverride
+        self.env = env
     }
 
     /// True when every field is nil — the store drops such entries.
@@ -40,8 +60,12 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
         name = try c.decodeIfPresent(String.self, forKey: .name)
         color = try c.decodeIfPresent(String.self, forKey: .color)
         icon = try c.decodeIfPresent(String.self, forKey: .icon)
+        appearanceOverride = try c.decodeIfPresent(String.self, forKey: .appearanceOverride)
+        themeDarkOverride = try c.decodeIfPresent(String.self, forKey: .themeDarkOverride)
+        themeLightOverride = try c.decodeIfPresent(String.self, forKey: .themeLightOverride)
         preserveSessionsOverride = try c.decodeIfPresent(Bool.self, forKey: .preserveSessionsOverride)
         notificationsOverride = try c.decodeIfPresent(Bool.self, forKey: .notificationsOverride)
+        env = try c.decodeIfPresent([String: String].self, forKey: .env)
     }
 }
 
