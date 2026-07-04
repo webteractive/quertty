@@ -118,6 +118,25 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves + applies i
     one (`SurfaceRegistry.title` returns nil for the empty initial title so
     the fallback engages).
 
+### Per-project settings
+
+Right-click a project row → **Rename…** / **Project Settings…** (name, curated
+color, SF Symbol icon, preserve-sessions + notifications tri-states). Pure
+model in `ZettyCore/Settings/` (`ProjectSettings` · `ProjectSettingsFile` ·
+`ProjectSettingsStore` · `ProjectSettingsResolver`); private JSON at
+`~/Library/Application Support/zetty/project-settings.json` keyed by
+**canonical rootPath** (survives remove/re-add; a moved directory orphans its
+settings — accepted for v1). Precedence: project override → global config →
+default. App wiring: `AppDelegate.resolvedSettings(for:)` +
+`updateProjectSettings(_:for:)`; per-pane preserve decision inside
+`applySessionPreservation`'s provider via `WorkspaceModel.project(containing:)`
+(affects NEW panes only); notification gating at the fire site
+(sound/banners) and in `publishAttentionCount` (dock badge) — the in-app
+bell/inbox and status dots are never gated. Palette ids in
+`ZTheme.projectPalette` (8 curated hues, distinct from accent + semantic
+status colors). Theme override, `.zetty/project.json`, and env vars are
+v2/v3 — see `docs/plans/2026-07-04-per-project-settings-design.md`.
+
 ## tmux-style prefix keys + copy mode
 
 `Ctrl+B` (configurable) arms a one-shot prefix; the next key drives Zetty:

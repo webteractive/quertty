@@ -28,6 +28,11 @@ by the tool it's running.
   [zmx](https://zmx.sh) sessions that survive app quit/relaunch, and
   reattached panes replay their full scrollback history (colors intact) so
   scrolling up works as if the app never quit.
+- **Per-project settings** — right-click a project → **Rename…** or **Project
+  Settings…**: custom name, identity color, and icon for the sidebar, plus
+  per-project overrides (Follow global / On / Off) of session preservation
+  and agent notifications. Stored privately per user; nothing is written
+  into the repo.
 - **AI agent status** — hook-driven status dots per tab and per project:
   green = running, yellow = needs attention, dim = idle — with optional
   sound / Dock badge / Notification Center alerts when an agent needs you.

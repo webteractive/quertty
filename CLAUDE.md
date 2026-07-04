@@ -90,6 +90,10 @@ in `ZettyCore` (`AppConfig` / `ConfigStore`); `AppDelegate` resolves it.
   `restore-scrollback` (default true) replays zmx history into reattached
   panes via a generated wrapper script (`~/.zetty/scrollback-restore.sh`) so
   scrollback survives relaunch. Details in [`AGENTS.md`](AGENTS.md).
+- **Per-project settings** — sidebar right-click → Rename…/Project Settings…
+  (name/color/icon + preserve-sessions & notifications tri-state overrides);
+  private store in Application Support, pure core in `ZettyCore/Settings/`.
+  Details in [`AGENTS.md`](AGENTS.md).
 - **Baked-in ghostty defaults** (user directives win): `shell-integration =
   zsh`, `shell-integration-features = ssh-env,ssh-terminfo`.
 - **`prefix` / `bind` / `copy-bind`** — the tmux-style prefix-key layer.
