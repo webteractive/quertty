@@ -90,9 +90,12 @@ idiom; no hardcoded colors.
 - **`git init` fails** → **non-fatal**: the project is still added, followed by
   a warning alert ("Folder created and added, but git init failed: …"). We
   don't discard a good folder over a git hiccup.
-- **CLI** mirrors this: exit 2 with a stderr message on validation / already-
-  exists / mkdir errors; exit 0 printing the first pane id on success; a git-
-  init failure prints a warning to stderr but still exits 0.
+- **CLI** mirrors the *hard* errors: exit 1 with a stderr message on already-
+  exists / mkdir failures; exit 0 printing the first pane id on success. A soft
+  `git init` failure is **non-fatal and silent** on the CLI path (the socket
+  response is just the pane id — the folder is still created, exit 0). The GUI
+  surfaces the git warning via an alert. Widening the response protocol for this
+  rare case isn't worth it in v1.
 
 ## Layout templates
 
