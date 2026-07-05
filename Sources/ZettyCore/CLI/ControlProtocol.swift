@@ -24,6 +24,11 @@ public enum ControlRequest: Equatable, Sendable {
     /// tabs/panes and ending their zmx sessions (no confirmation dialog —
     /// the CLI call IS the confirmation). The last project can't be removed.
     case removeProject(name: String)
+    /// Create a new directory at `path` (which must NOT already exist) and add
+    /// it as a project named `name` (nil → the last path component); `gitInit`
+    /// runs `git init` in the new folder. The response is `.pane` with the
+    /// first pane's short id.
+    case newProject(path: String, name: String?, gitInit: Bool)
     /// Close the targeted pane (its tab when it's the last pane), or the
     /// whole tab containing it when `wholeTab` is set.
     case close(target: PaneSelector, wholeTab: Bool)
@@ -47,7 +52,7 @@ public enum ControlRequest: Equatable, Sendable {
 
 extension ControlRequest: Codable {
     private enum CodingKeys: String, CodingKey {
-        case command, target, text, enter, keys, project, wholeTab, killSessions, vertical, lines, path, name
+        case command, target, text, enter, keys, project, wholeTab, killSessions, vertical, lines, path, name, gitInit
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +76,12 @@ extension ControlRequest: Codable {
             )
         case "remove-project":
             self = .removeProject(name: try container.decode(String.self, forKey: .project))
+        case "new-project":
+            self = .newProject(
+                path: try container.decode(String.self, forKey: .path),
+                name: try container.decodeIfPresent(String.self, forKey: .name),
+                gitInit: try container.decodeIfPresent(Bool.self, forKey: .gitInit) ?? false
+            )
         case "close":
             self = .close(
                 target: try container.decode(PaneSelector.self, forKey: .target),
@@ -120,6 +131,11 @@ extension ControlRequest: Codable {
         case .removeProject(let name):
             try container.encode("remove-project", forKey: .command)
             try container.encode(name, forKey: .project)
+        case .newProject(let path, let name, let gitInit):
+            try container.encode("new-project", forKey: .command)
+            try container.encode(path, forKey: .path)
+            try container.encodeIfPresent(name, forKey: .name)
+            try container.encode(gitInit, forKey: .gitInit)
         case .close(let target, let wholeTab):
             try container.encode("close", forKey: .command)
             try container.encode(target, forKey: .target)
