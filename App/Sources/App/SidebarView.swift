@@ -42,7 +42,7 @@ private enum SidebarSection: Hashable {
         switch self {
         case .pinned:     return "Pinned"
         case .projects:   return "Projects"
-        case .hibernated: return "Hibernated"
+        case .hibernated: return "Hibernating"
         }
     }
 }
