@@ -41,8 +41,13 @@ final class StatusBarView: NSView {
 
     // Right: "Open ▾" pill · appearance · scheme · shell · zetty build · libghostty.
     private let editorPill = NSView()
-    /// "Update available" pill — hidden unless a newer release exists.
-    private let updateButton = NSButton()
+    /// Version pill (bottom-right): shows the build version as a button; click
+    /// checks for updates. Switches to an accent "↑ Update X" state when a newer
+    /// release is known.
+    private let versionButton = NSButton()
+    private let versionPill = NSView()
+    private var baseVersion = ""
+    private var pendingUpdate: AvailableUpdate?
     var onUpdateClicked: (() -> Void)?
 
     private let editorButton = NSButton()
@@ -53,7 +58,6 @@ final class StatusBarView: NSView {
     private let sep1 = NSTextField(labelWithString: "·")
     private let shellLabel = NSTextField(labelWithString: "")
     private let sep2 = NSTextField(labelWithString: "·")
-    private let zettyLabel = NSTextField(labelWithString: "")
     private let sep3 = NSTextField(labelWithString: "·")
     private let ghosttyLabel = NSTextField(labelWithString: "")
     private let rightStack = NSStackView()
@@ -62,7 +66,7 @@ final class StatusBarView: NSView {
 
     private var plainLabels: [NSTextField] {
         [branchLabel, aheadLabel, behindLabel, changesLabel,
-         cwdLabel, sep0, sep1, shellLabel, sep2, zettyLabel, sep3, ghosttyLabel]
+         cwdLabel, sep0, sep1, shellLabel, sep2, sep3, ghosttyLabel]
     }
 
     override init(frame frameRect: NSRect) {
@@ -131,18 +135,28 @@ final class StatusBarView: NSView {
         // The cwd is the one label allowed to give way: the stack may compress
         // and the path truncates (by the head) before anything else moves.
         leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        updateButton.isBordered = false
-        updateButton.wantsLayer = true
-        updateButton.layer?.cornerRadius = 9
-        updateButton.font = ZTheme.monoFont(size: 11)
-        updateButton.target = self
-        updateButton.action = #selector(updateClicked)
-        updateButton.isHidden = true
-        updateButton.translatesAutoresizingMaskIntoConstraints = false
+        // Version pill — a bordered button (like "Open ▾") showing the build
+        // version; click checks for updates.
+        versionButton.isBordered = false
+        versionButton.font = ZTheme.monoFont(size: 11)
+        versionButton.target = self
+        versionButton.action = #selector(versionClicked)
+        versionButton.translatesAutoresizingMaskIntoConstraints = false
+        versionPill.wantsLayer = true
+        versionPill.layer?.cornerRadius = 10
+        versionPill.layer?.borderWidth = 1
+        versionPill.translatesAutoresizingMaskIntoConstraints = false
+        versionPill.addSubview(versionButton)
+        NSLayoutConstraint.activate([
+            versionPill.heightAnchor.constraint(equalToConstant: 20),
+            versionButton.leadingAnchor.constraint(equalTo: versionPill.leadingAnchor, constant: 9),
+            versionButton.trailingAnchor.constraint(equalTo: versionPill.trailingAnchor, constant: -9),
+            versionButton.centerYAnchor.constraint(equalTo: versionPill.centerYAnchor),
+        ])
 
-        configureStack(rightStack, views: [updateButton, editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, zettyLabel])
-        rightStack.setCustomSpacing(10, after: updateButton)
+        configureStack(rightStack, views: [editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, versionPill])
         rightStack.setCustomSpacing(10, after: editorPill)
+        rightStack.setCustomSpacing(8, after: sep3)
 
         addSubview(topBorder)
         addSubview(leftStack)
@@ -245,19 +259,31 @@ final class StatusBarView: NSView {
         onShowEditorMenu?(editorPill)
     }
 
-    @objc private func updateClicked() {
+    @objc private func versionClicked() {
         onUpdateClicked?()
     }
 
-    /// Shows/hides the update pill; `nil` hides it.
+    /// Sets the pending update (accent "↑ Update X" state) or clears it (back to
+    /// the plain version). Re-renders the version pill.
     func setUpdate(_ update: AvailableUpdate?) {
-        if let update {
-            updateButton.title = " ↑ Update \(update.version) "
-            updateButton.layer?.backgroundColor = ZTheme.current.bg3Color.cgColor
-            updateButton.contentTintColor = ZTheme.current.accentColor
-            updateButton.isHidden = false
+        pendingUpdate = update
+        renderVersionPill()
+    }
+
+    private func renderVersionPill() {
+        let theme = ZTheme.current
+        if let pendingUpdate {
+            versionButton.title = "↑ Update \(pendingUpdate.version)"
+            versionButton.contentTintColor = theme.accentColor
+            versionButton.toolTip = "Update available — click to open the download page"
+            versionPill.layer?.backgroundColor = theme.bg3Color.cgColor
+            versionPill.layer?.borderColor = theme.accentColor.cgColor
         } else {
-            updateButton.isHidden = true
+            versionButton.title = baseVersion
+            versionButton.contentTintColor = theme.fg2Color
+            versionButton.toolTip = "Click to check for updates"
+            versionPill.layer?.backgroundColor = theme.bg2Color.cgColor
+            versionPill.layer?.borderColor = theme.borderColor.cgColor
         }
     }
 
@@ -268,7 +294,8 @@ final class StatusBarView: NSView {
         cwdLabel.stringValue = cwd
         appearanceMode = appearance
         shellLabel.stringValue = shell
-        zettyLabel.stringValue = zetty
+        baseVersion = zetty
+        renderVersionPill()
         ghosttyLabel.stringValue = ghostty
         styleAppearanceButton()
         styleSchemeButton(scheme)
@@ -328,7 +355,7 @@ final class StatusBarView: NSView {
         behindLabel.textColor = theme.redColor
         changesLabel.textColor = theme.yellowColor
         shellLabel.textColor = theme.fg2Color
-        zettyLabel.textColor = theme.fg2Color
+        renderVersionPill()
         ghosttyLabel.textColor = theme.fg2Color
         sep0.textColor = theme.fg3Color
         sep1.textColor = theme.fg3Color

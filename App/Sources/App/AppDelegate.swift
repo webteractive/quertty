@@ -159,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tvc.onRenameProject = { [weak self] project in self?.promptRenameProject(project) }
         tvc.onOpenProjectSettings = { [weak self] project in self?.presentProjectSettings(project) }
         tvc.onOpenAgentSettings = { [weak self] project in self?.presentProjectSettings(project, initialTab: "agents") }
-        tvc.onUpdatePillClicked = { [weak self] in self?.openLatestRelease() }
+        tvc.onUpdatePillClicked = { [weak self] in self?.versionPillClicked() }
         tvc.onActiveProjectChanged = { [weak self] in self?.applyThemeForActiveProject() }
         tvc.layoutTemplateProvider = { [weak self] project in
             ProjectFileIO.load(projectRoot: project.rootPath)?.layoutTemplate
@@ -259,12 +259,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// Status-bar pill click: open the release page (refresh from a live check).
-    private func openLatestRelease() {
+    /// Version-pill click: check now, reflect the result in the pill, open the
+    /// release page if a newer version exists, else report up-to-date.
+    private func versionPillClicked() {
         updateChecker.check { [weak self] result in
-            guard case .success(let update) = result, let update else { return }
-            self?.terminalViewController?.showUpdate(update)
-            NSWorkspace.shared.open(update.url)
+            guard let self else { return }
+            switch result {
+            case .success(let update):
+                self.terminalViewController?.showUpdate(update)
+                if let update {
+                    NSWorkspace.shared.open(update.url)
+                } else {
+                    self.showUpdateInfo("You're up to date.")
+                }
+            case .failure:
+                self.showUpdateInfo("Couldn't check for updates.")
+            }
         }
     }
 
