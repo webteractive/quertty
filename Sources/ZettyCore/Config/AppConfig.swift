@@ -61,6 +61,9 @@ public struct AppConfig: Equatable, Sendable {
     /// When true (default), quitting asks for confirmation first; when false
     /// the app quits immediately.
     public var confirmQuit: Bool
+    /// Poll GitHub for newer releases and show an update pill (default true).
+    /// Only gates automatic checks; the manual menu item always runs.
+    public var checkUpdates: Bool
     /// Attention sound when an agent needs attention.
     public var notifySound: Bool
     /// Dock badge showing the count of panes needing attention.
@@ -90,6 +93,7 @@ public struct AppConfig: Equatable, Sendable {
         preserveSessions: Bool = false,
         restoreScrollback: Bool = true,
         confirmQuit: Bool = true,
+        checkUpdates: Bool = true,
         notifySound: Bool = true,
         notifyBadge: Bool = true,
         notifySystem: Bool = true,
@@ -104,6 +108,7 @@ public struct AppConfig: Equatable, Sendable {
         self.preserveSessions = preserveSessions
         self.restoreScrollback = restoreScrollback
         self.confirmQuit = confirmQuit
+        self.checkUpdates = checkUpdates
         self.notifySound = notifySound
         self.notifyBadge = notifyBadge
         self.notifySystem = notifySystem
@@ -155,6 +160,8 @@ public struct AppConfig: Equatable, Sendable {
                 config.restoreScrollback = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "confirm-quit":
                 config.confirmQuit = ["true", "yes", "on", "1"].contains(value.lowercased())
+            case "check-updates":
+                config.checkUpdates = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "notify-sound":
                 config.notifySound = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "notify-badge":
@@ -243,6 +250,9 @@ public struct AppConfig: Equatable, Sendable {
 
         # Ask for confirmation before quitting (false quits immediately).
         confirm-quit = \(confirmQuit)
+
+        # Check GitHub for newer Zetty releases and show an update pill.
+        check-updates = \(checkUpdates)
 
         # Agent needs-attention alerts: sound, Dock badge (attention-pane count),
         # and macOS Notification Center (fires only while Zetty is in background).

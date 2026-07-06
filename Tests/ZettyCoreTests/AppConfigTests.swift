@@ -197,3 +197,11 @@ import Testing
     #expect(reparsed.ghosttyValue("font-family") == "JetBrains Mono")
     #expect(reparsed.ghosttyValue("font-size") == "15")
 }
+
+@Test func configParsesCheckUpdates() {
+    #expect(AppConfig.parse("").checkUpdates == true)            // default on
+    #expect(AppConfig.parse("check-updates = false").checkUpdates == false)
+    #expect(AppConfig.parse("check-updates = true").checkUpdates == true)
+    // Round-trips through the serialized default.
+    #expect(AppConfig.parse(AppConfig(checkUpdates: false).rendered()).checkUpdates == false)
+}
