@@ -14,8 +14,9 @@ by the tool it's running.
 
 ## Features
 
-- **Projects → tabs → splits** — pin a directory as a project; every project
-  owns its own tabs, each tab an arbitrarily nested tree of split panes.
+- **Projects → tabs → splits** — **create a new project folder** or add an
+  existing directory; every project owns its own tabs, each tab an arbitrarily
+  nested tree of split panes. Break any pane out into its own tab.
 - **Full Ghostty terminal** — GPU rendering, ligatures/text shaping, and the
   Kitty keyboard + graphics protocols come from full libghostty. Zetty builds
   the multiplexer shell, not the terminal.
@@ -42,6 +43,13 @@ by the tool it's running.
 - **AI agent status** — hook-driven status dots per tab and per project:
   green = running, yellow = needs attention, dim = idle — with optional
   sound / Dock badge / Notification Center alerts when an agent needs you.
+- **Launch agents per project** — enable coding agents (Claude Code, Codex,
+  Hermes, Gemini, opencode, Pi, Cursor) in a project's **Agents** settings;
+  opening a new tab/split then offers a keyboard-driven chooser to launch one
+  or a plain shell.
+- **Update notifications** — Zetty checks GitHub for newer releases and shows
+  an "Update available" pill in the status bar (plus **Check for Updates…**);
+  opt out with `check-updates = false`.
 - **Tab identity** — a foreground-process probe names each tab after what it's
   actually running, with bundled logos for 40+ CLI tools.
 - **Control CLI** — a `zetty` command scripts the app over a local socket:
@@ -154,8 +162,10 @@ Command Line** and click install — this symlinks `zetty` into
 
 ### Getting started
 
-1. Launch Zetty. The sidebar lists your **projects** — pin any directory to
-   add one; each project keeps its own tabs and layout.
+1. Launch Zetty. The sidebar lists your **projects**. Click the **+** to
+   **New Project…** (create a folder, optionally `git init` it) or **Add
+   Existing Project…** (pick a directory). Each project keeps its own tabs and
+   layout.
 2. Open tabs and split panes with the prefix keys below (or the menus).
    Layout, tab titles, and sidebar state persist across relaunches
    (`~/Library/Application Support/zetty/workspace.json`).
@@ -168,13 +178,15 @@ Command Line** and click install — this symlinks `zetty` into
 |---|---|
 | `⌘T` | New tab |
 | `⌘D` / `⇧⌘D` | Split vertically / horizontally |
+| `⌥⌘T` | Break focused pane into its own tab |
 | `⌥⌘←` `⌥⌘→` `⌥⌘↑` `⌥⌘↓` | Resize the focused pane |
 | `⌘W` / `⇧⌘W` | Close pane / close tab |
 | `⌘}` / `⌘{` | Next / previous tab |
 | `⌘1`–`⌘9` | Jump to tab |
 | `⌘K` | Command palette |
 | `⌘B` | Toggle sidebar |
-| `⌘O` | Add project |
+| `⇧⌘N` | New project (create a folder) |
+| `⌘O` | Add existing project |
 | `⌘,` | Settings |
 | `⌥⌘,` | Project Settings (active project) |
 | `⇧⌘,` | Reload configuration |
@@ -196,6 +208,7 @@ Press `Ctrl+B` (the prefix, configurable), then:
 | `o` | Cycle pane focus |
 | `x` | Close pane |
 | `z` | Zoom / unzoom pane |
+| `!` | Break focused pane into a new tab |
 | `c` | New tab |
 | `n` / `p` | Next / previous tab |
 | `1`–`9` | Jump to tab |
@@ -232,6 +245,7 @@ seeds a documented starter file on first launch. Format is plain
 | `preserve-sessions` | `false` | Keep panes alive across quit/relaunch (requires zmx) |
 | `restore-scrollback` | `true` | Replay preserved panes' scrollback history on relaunch (with `preserve-sessions`) |
 | `confirm-quit` | `true` | Ask before quitting |
+| `check-updates` | `true` | Notify when a newer Zetty release is available |
 | `notify-sound` / `notify-badge` / `notify-system` | `true` | Agent needs-attention alerts |
 | `editor` | — | App used by Settings → "Open in Editor" |
 | `prefix` / `bind` / `copy-bind` | tmux-canonical | Prefix-key layer remapping |
@@ -291,6 +305,35 @@ Restart the agent after installing a hook. Events correlate to panes by
 working directory, so two panes in the same directory light up together.
 Toggling off uninstalls the hook cleanly.
 
+### Launching agents in a project
+
+Status hooks (above) *detect* agents you start yourself. To have Zetty *launch*
+them, open **Project Settings → Agents** and enable the ones you use — Claude
+Code, Codex, Hermes, Gemini, opencode, Pi, or Cursor. Each row has an editable
+launch command (defaults to the tool's CLI, e.g. `cursor-agent` for Cursor).
+
+With at least one agent enabled, opening a **new tab or split** in that project
+shows a chooser before the pane spawns:
+
+- **↑/↓** to select, **⏎** to launch, **1–9** to jump straight to an agent,
+  **Esc** to cancel.
+- **Standard session** opens a plain shell instead.
+- **Manage agents…** jumps to the Agents settings.
+
+The master **"Ask which agent to launch…"** toggle silences the chooser without
+unchecking your agents. This is per-project and stays on your machine (it is not
+written into the repo). The CLI (`zetty new-tab` / `split`) never prompts.
+
+### Updates
+
+Zetty checks [GitHub Releases](https://github.com/webteractive/zetty/releases)
+for a newer version on launch and periodically. When one exists, an **"↑ Update
+&lt;version&gt;"** pill appears in the status bar — click it to open the download
+page. **App menu → Check for Updates…** runs the check on demand. Set
+`check-updates = false` to disable the automatic checks (the menu item still
+works). Updating is manual: download the new DMG and replace the app (Zetty
+does not self-update).
+
 ### Control CLI
 
 The `zetty` command drives the running app over `~/.zetty/zetty.sock` —
@@ -303,8 +346,11 @@ zetty send --cwd ~/work/api 'ls' --enter # type into a pane
 zetty send --key C-c                     # send a control key
 zetty capture --lines 100                # recent pane output (preserved sessions)
 zetty new-tab --project api              # prints the new pane id
-zetty add-project ~/work/api             # add a directory as a project
 zetty split --pane 1a2b3c4d --horizontal
+zetty break --pane 1a2b3c4d              # move a pane into its own tab
+zetty add-project ~/work/api             # add an existing directory as a project
+zetty new-project ~/work/new --git       # create a folder + add it (optional git init)
+zetty remove-project api                 # close a project's tabs (no confirmation)
 zetty focus --cwd ~/work/api
 zetty close --pane 1a2b3c4d --tab
 zetty reload                             # same as ⇧⌘,
