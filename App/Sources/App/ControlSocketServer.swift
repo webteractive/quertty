@@ -47,11 +47,38 @@ final class ControlSocketServer {
 
     // MARK: - Listener
 
+    /// True if a server is currently accepting connections at `path` — used to
+    /// avoid unlinking a live instance's socket.
+    private static func socketIsLive(at path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let pathBytes = path.utf8CString
+        guard pathBytes.count <= MemoryLayout.size(ofValue: address.sun_path) else { return false }
+        withUnsafeMutableBytes(of: &address.sun_path) { destination in
+            pathBytes.withUnsafeBytes { source in
+                destination.copyMemory(from: UnsafeRawBufferPointer(start: source.baseAddress, count: source.count))
+            }
+        }
+        let connected = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        return connected == 0
+    }
+
     private func listen() {
         let path = socketURL.path
         try? FileManager.default.createDirectory(
             at: socketURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
+        // Don't steal a LIVE socket: if another instance is already listening,
+        // leave its socket alone (unlinking it would break the running app's
+        // CLI). Only remove a stale/dead socket before binding our own.
+        if Self.socketIsLive(at: path) { return }
         unlink(path)   // stale socket from a previous run
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
