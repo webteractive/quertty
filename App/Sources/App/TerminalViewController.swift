@@ -459,16 +459,19 @@ final class TerminalViewController: NSViewController {
         // Wire sidebar callbacks.
         sidebar.onSelectProject = { [weak self] index in
             guard let self, self.workspace.projects.indices.contains(index) else { return }
-            let project = self.workspace.projects[index]
-            if project.isHibernated { self.wakeProject(project) }
-            else { self.selectProject(at: index) }
+            // A hibernated project stays dormant on a plain click — wake it via
+            // the context menu, command palette, or CLI.
+            guard !self.workspace.projects[index].isHibernated else { return }
+            self.selectProject(at: index)
         }
         sidebar.onToggleHibernate = { [weak self] index in self?.toggleHibernation(at: index) }
 
         sidebar.onShowBellMenu = { [weak self] anchor in self?.showAttentionMenu(from: anchor) }
         sidebar.onOpenSettings = { [weak self] in self?.onOpenSettings?() }
         sidebar.onSelectTab = { [weak self] projectIndex, tabIndex in
-            guard let self else { return }
+            guard let self, self.workspace.projects.indices.contains(projectIndex) else { return }
+            // Hibernated projects stay dormant on click — wake intentionally.
+            guard !self.workspace.projects[projectIndex].isHibernated else { return }
             self.workspace.select(index: projectIndex)
             // Same activation hook as selectProject(at:) — a tab click can
             // switch projects too (per-project theme must follow).
