@@ -5,14 +5,18 @@ public final class ProjectRuntime {
     public var name: String
     public var rootPath: String
     public var isPinned: Bool
+    /// When true, the project's sessions/processes/panes are freed; only its
+    /// layout remains. Waking re-spawns fresh shells.
+    public var isHibernated: Bool
     public let tabList: TabList
 
     public init(id: UUID = UUID(), name: String, rootPath: String,
-                isPinned: Bool = false, tabList: TabList? = nil) {
+                isPinned: Bool = false, isHibernated: Bool = false, tabList: TabList? = nil) {
         self.id = id
         self.name = name
         self.rootPath = rootPath
         self.isPinned = isPinned
+        self.isHibernated = isHibernated
         // Default the project's tab list to open terminals in the project root.
         self.tabList = tabList ?? TabList(defaultWorkingDir: rootPath)
     }

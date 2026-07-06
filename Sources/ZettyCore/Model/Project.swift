@@ -47,6 +47,7 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
     public var isPinned: Bool
     public var sortOrder: Int
     public var preserveSessions: Bool
+    public var isHibernated: Bool
     public var sessions: [Session]
 
     public init(
@@ -56,6 +57,7 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         isPinned: Bool = false,
         sortOrder: Int = 0,
         preserveSessions: Bool = false,
+        isHibernated: Bool = false,
         sessions: [Session] = []
     ) {
         self.id = id
@@ -64,6 +66,25 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         self.isPinned = isPinned
         self.sortOrder = sortOrder
         self.preserveSessions = preserveSessions
+        self.isHibernated = isHibernated
         self.sessions = sessions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, rootPath, isPinned, sortOrder, preserveSessions, isHibernated, sessions
+    }
+
+    /// Tolerant decode so workspace.json files written before a field existed
+    /// still load (missing → default).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decode(String.self, forKey: .name)
+        rootPath = try c.decode(String.self, forKey: .rootPath)
+        isPinned = try c.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder) ?? 0
+        preserveSessions = try c.decodeIfPresent(Bool.self, forKey: .preserveSessions) ?? false
+        isHibernated = try c.decodeIfPresent(Bool.self, forKey: .isHibernated) ?? false
+        sessions = try c.decodeIfPresent([Session].self, forKey: .sessions) ?? []
     }
 }

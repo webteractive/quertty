@@ -205,3 +205,13 @@ import Testing
     // Round-trips through the serialized default.
     #expect(AppConfig.parse(AppConfig(checkUpdates: false).rendered()).checkUpdates == false)
 }
+
+@Test func configParsesHibernateAfter() {
+    #expect(AppConfig.parse("").hibernateAfter == 0)
+    #expect(AppConfig.parse("hibernate-after = 60m").hibernateAfter == 3600)
+    #expect(AppConfig.parse("hibernate-after = 2h").hibernateAfter == 7200)
+    #expect(AppConfig.parse("hibernate-after = 90").hibernateAfter == 90)
+    #expect(AppConfig.parse("hibernate-after = off").hibernateAfter == 0)
+    #expect(AppConfig.parse("hibernate-after = garbage").hibernateAfter == 0)
+    #expect(AppConfig.parse(AppConfig(hibernateAfter: 3600).rendered()).hibernateAfter == 3600)
+}

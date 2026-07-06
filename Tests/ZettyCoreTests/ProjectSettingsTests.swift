@@ -122,3 +122,10 @@ import Foundation
     #expect(decoded.name == "X")
     #expect(decoded.agents == nil)
 }
+
+@Test func projectSettingsRoundTripsAutoHibernate() throws {
+    var s = ProjectSettings(); s.autoHibernate = false
+    let decoded = try JSONDecoder().decode(ProjectSettings.self, from: JSONEncoder().encode(s))
+    #expect(decoded.autoHibernate == false)
+    #expect(ProjectSettings().autoHibernate == nil)
+}

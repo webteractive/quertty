@@ -133,3 +133,19 @@ private func tempDir() throws -> URL {
     #expect(restoredTrees[0].manualTitle == "My Custom Tab")
     #expect(restoredTrees[1].manualTitle == nil)
 }
+
+@Test func workspaceRoundTripsHibernatedFlag() throws {
+    let ws = WorkspaceModel(restoring: [ProjectRuntime(name: "a", rootPath: "/a")], activeIndex: 0)!
+    ws.projects[0].isHibernated = true
+    let snap = SessionSnapshot.workspace(from: ws)
+    let decoded = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(snap))
+    #expect(decoded.projects[0].isHibernated == true)
+    let runtimes = SessionSnapshot.projectRuntimes(from: decoded)
+    #expect(runtimes[0].isHibernated == true)
+}
+
+@Test func projectDecodesWithoutHibernatedField() throws {
+    let json = #"{"id":"\#(UUID().uuidString)","name":"a","rootPath":"/a","isPinned":false,"sortOrder":0,"preserveSessions":false,"sessions":[]}"#
+    let p = try JSONDecoder().decode(Project.self, from: Data(json.utf8))
+    #expect(p.isHibernated == false)
+}

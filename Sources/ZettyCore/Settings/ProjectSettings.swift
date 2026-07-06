@@ -37,6 +37,9 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
     /// the modal shows when ≥1 agent is enabled; false → never prompt (a direct
     /// off switch that keeps the enabled-agent list intact).
     public var promptAgentOnNewPane: Bool?
+    /// Tri-state override of global auto-hibernation: nil = follow global,
+    /// false = never auto-hibernate this project (manual hibernate still works).
+    public var autoHibernate: Bool?
 
     public init(
         name: String? = nil,
@@ -49,7 +52,8 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
         notificationsOverride: Bool? = nil,
         env: [String: String]? = nil,
         agents: [ProjectAgent]? = nil,
-        promptAgentOnNewPane: Bool? = nil
+        promptAgentOnNewPane: Bool? = nil,
+        autoHibernate: Bool? = nil
     ) {
         self.name = name
         self.color = color
@@ -62,6 +66,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
         self.env = env
         self.agents = agents
         self.promptAgentOnNewPane = promptAgentOnNewPane
+        self.autoHibernate = autoHibernate
     }
 
     /// True when every field is nil — the store drops such entries.
@@ -80,6 +85,7 @@ public struct ProjectSettings: Codable, Sendable, Equatable {
         env = try c.decodeIfPresent([String: String].self, forKey: .env)
         agents = try c.decodeIfPresent([ProjectAgent].self, forKey: .agents)
         promptAgentOnNewPane = try c.decodeIfPresent(Bool.self, forKey: .promptAgentOnNewPane)
+        autoHibernate = try c.decodeIfPresent(Bool.self, forKey: .autoHibernate)
     }
 }
 

@@ -64,6 +64,8 @@ public struct AppConfig: Equatable, Sendable {
     /// Poll GitHub for newer releases and show an update pill (default true).
     /// Only gates automatic checks; the manual menu item always runs.
     public var checkUpdates: Bool
+    /// Auto-hibernate an idle, quiet project after this many seconds (0 = off).
+    public var hibernateAfter: TimeInterval
     /// Attention sound when an agent needs attention.
     public var notifySound: Bool
     /// Dock badge showing the count of panes needing attention.
@@ -94,6 +96,7 @@ public struct AppConfig: Equatable, Sendable {
         restoreScrollback: Bool = true,
         confirmQuit: Bool = true,
         checkUpdates: Bool = true,
+        hibernateAfter: TimeInterval = 0,
         notifySound: Bool = true,
         notifyBadge: Bool = true,
         notifySystem: Bool = true,
@@ -109,6 +112,7 @@ public struct AppConfig: Equatable, Sendable {
         self.restoreScrollback = restoreScrollback
         self.confirmQuit = confirmQuit
         self.checkUpdates = checkUpdates
+        self.hibernateAfter = hibernateAfter
         self.notifySound = notifySound
         self.notifyBadge = notifyBadge
         self.notifySystem = notifySystem
@@ -131,6 +135,21 @@ public struct AppConfig: Equatable, Sendable {
     /// **Every other `key = value` line is treated as a ghostty directive**
     /// and forwarded verbatim — so a user can paste their existing ghostty config
     /// straight in. Ghostty defines none of the reserved keys, so no collision.
+    /// Parses a duration for `hibernate-after`: "90"→90s, "60m"→3600, "2h"→7200;
+    /// "off"/"0"/blank/invalid → 0.
+    static func parseDuration(_ raw: String) -> TimeInterval {
+        let s = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        if s.isEmpty || s == "off" || s == "false" { return 0 }
+        let unit = s.last
+        let numberPart = (unit == "m" || unit == "h" || unit == "s") ? String(s.dropLast()) : s
+        guard let value = Double(numberPart), value >= 0 else { return 0 }
+        switch unit {
+        case "h": return value * 3600
+        case "m": return value * 60
+        default:  return value
+        }
+    }
+
     public static func parse(_ text: String) -> AppConfig {
         var config = AppConfig()
         for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
@@ -162,6 +181,8 @@ public struct AppConfig: Equatable, Sendable {
                 config.confirmQuit = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "check-updates":
                 config.checkUpdates = ["true", "yes", "on", "1"].contains(value.lowercased())
+            case "hibernate-after":
+                config.hibernateAfter = AppConfig.parseDuration(value)
             case "notify-sound":
                 config.notifySound = ["true", "yes", "on", "1"].contains(value.lowercased())
             case "notify-badge":
@@ -253,6 +274,10 @@ public struct AppConfig: Equatable, Sendable {
 
         # Check GitHub for newer Zetty releases and show an update pill.
         check-updates = \(checkUpdates)
+
+        # Auto-hibernate a project after it's idle and quiet (0/off = disabled,
+        # e.g. 60m or 2h). Frees its sessions/processes; waking spawns fresh shells.
+        hibernate-after = \(hibernateAfter == 0 ? "off" : String(Int(hibernateAfter)))
 
         # Agent needs-attention alerts: sound, Dock badge (attention-pane count),
         # and macOS Notification Center (fires only while Zetty is in background).
