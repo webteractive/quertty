@@ -37,6 +37,10 @@ let project = Project(
             infoPlist: .extendingDefault(with: [
                 "LSUIElement": false,
                 "NSPrincipalClass": "NSApplication",
+                // Only one Zetty instance at a time — launching again (e.g. after
+                // an update while the old copy still runs) activates the existing
+                // window instead of spawning a second "double" window.
+                "LSMultipleInstancesProhibited": true,
                 // Brand: the app/binary/CLI are "zetty"; internal module names
                 // (ZettyCore/ZettyGhostty) are renamed in the repo layer.
                 "CFBundleName": "Zetty",
