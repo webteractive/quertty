@@ -34,6 +34,11 @@ final class ProjectSettingsSheet: NSObject {
     private let notifyControl: NSSegmentedControl
     private let envTextView = NSTextView()
 
+    // One checkbox + one command field per SpawnableAgent.catalog entry
+    // (parallel arrays, same order as the catalog).
+    private var agentChecks: [NSButton] = []
+    private var agentCommandFields: [NSTextField] = []
+
     static func present(
         for projectName: String,
         current: ProjectSettings,
@@ -141,7 +146,60 @@ final class ProjectSettingsSheet: NSObject {
 
         super.init()
         configureEnvEditor(current: current.env)
+        configureAgentControls(current: current.agents)
         buildLayout()
+    }
+
+    /// Builds one checkbox + command field per catalog agent, prefilled from
+    /// the project's stored `agents` (enabled = present; blank command → the
+    /// catalog default, shown but disabled until the checkbox is on).
+    private func configureAgentControls(current: [ProjectAgent]?) {
+        var commandByID: [String: String] = [:]
+        for entry in current ?? [] where commandByID[entry.id] == nil {
+            commandByID[entry.id] = entry.command
+        }
+        for agent in SpawnableAgent.catalog {
+            let check = NSButton(checkboxWithTitle: agent.displayName,
+                                 target: self, action: #selector(agentCheckToggled(_:)))
+            let stored = commandByID[agent.id]
+            check.state = stored != nil ? .on : .off
+            let field = NSTextField(string: (stored?.isEmpty == false) ? stored! : agent.defaultCommand)
+            field.placeholderString = agent.defaultCommand
+            field.font = ZTheme.monoFont(size: 12)
+            field.isEnabled = stored != nil
+            agentChecks.append(check)
+            agentCommandFields.append(field)
+        }
+    }
+
+    @objc private func agentCheckToggled(_ sender: NSButton) {
+        guard let index = agentChecks.firstIndex(of: sender) else { return }
+        agentCommandFields[index].isEnabled = sender.state == .on
+    }
+
+    /// Lays out the Agents tab: a caption + one row (checkbox | command) per
+    /// catalog agent.
+    private func buildAgentsTab() -> NSStackView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        let caption = NSTextField(labelWithString:
+            "Enabled agents can be launched when you open a new tab or split in this project.")
+        caption.textColor = ZTheme.current.fg3Color
+        caption.font = .systemFont(ofSize: 11)
+        stack.addArrangedSubview(caption)
+        for index in SpawnableAgent.catalog.indices {
+            let row = NSStackView(views: [agentChecks[index], agentCommandFields[index]])
+            row.orientation = .horizontal
+            row.spacing = 8
+            agentChecks[index].translatesAutoresizingMaskIntoConstraints = false
+            agentChecks[index].widthAnchor.constraint(equalToConstant: 150).isActive = true
+            agentCommandFields[index].translatesAutoresizingMaskIntoConstraints = false
+            agentCommandFields[index].widthAnchor.constraint(greaterThanOrEqualToConstant: 260).isActive = true
+            stack.addArrangedSubview(row)
+        }
+        return stack
     }
 
     /// KEY=VALUE per line; values stay in the PRIVATE store only. Parsed on
@@ -280,7 +338,11 @@ final class ProjectSettingsSheet: NSObject {
         let environmentItem = NSTabViewItem(identifier: "environment")
         environmentItem.label = "Environment"
         environmentItem.view = padded(environment)
+        let agentsItem = NSTabViewItem(identifier: "agents")
+        agentsItem.label = "Agents"
+        agentsItem.view = padded(buildAgentsTab())
         tabView.addTabViewItem(generalItem)
+        tabView.addTabViewItem(agentsItem)
         tabView.addTabViewItem(environmentItem)
         tabView.translatesAutoresizingMaskIntoConstraints = false
         tabView.widthAnchor.constraint(equalToConstant: 500).isActive = true
@@ -368,6 +430,12 @@ final class ProjectSettingsSheet: NSObject {
         edited.preserveSessionsOverride = triStateValue(preserveControl)
         edited.notificationsOverride = triStateValue(notifyControl)
         edited.env = parsedEnv()
+        var agents: [ProjectAgent] = []
+        for (index, agent) in SpawnableAgent.catalog.enumerated() where agentChecks[index].state == .on {
+            let typed = agentCommandFields[index].stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            agents.append(ProjectAgent(id: agent.id, command: typed.isEmpty ? agent.defaultCommand : typed))
+        }
+        edited.agents = agents.isEmpty ? nil : agents
         hostWindow.endSheet(panel)
         Self.active = nil
         onSave(edited)
