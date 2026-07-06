@@ -21,6 +21,8 @@ import Foundation
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.addProject(path: "/Users/x/proj", name: nil, focus: false)))
             == .addProject(path: "/Users/x/proj", name: nil, focus: false))
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.removeProject(name: "zetty"))) == .removeProject(name: "zetty"))
+    #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.hibernateProject(name: "api"))) == .hibernateProject(name: "api"))
+    #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.wakeProject(name: "api"))) == .wakeProject(name: "api"))
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(
         ControlRequest.newProject(path: "/Users/x/new", name: "new", gitInit: true, focus: true)))
         == .newProject(path: "/Users/x/new", name: "new", gitInit: true, focus: true))

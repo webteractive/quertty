@@ -2205,6 +2205,28 @@ final class TerminalViewController: NSViewController {
         if let focused = focusedTerminalView() { view.window?.makeFirstResponder(focused) }
     }
 
+    /// Hibernate the named project (CLI, case-insensitive). No confirmation —
+    /// the CLI call IS the confirmation. Returns an error message or nil.
+    func hibernateProjectNamed(_ name: String) -> String? {
+        let matches = workspace.projects.filter { $0.name.lowercased() == name.lowercased() }
+        guard let project = matches.first else { return "no project named \"\(name)\"" }
+        guard matches.count == 1 else { return "\(matches.count) projects named \"\(name)\" — use the sidebar" }
+        guard workspace.projects.count > 1 else { return "cannot hibernate the only project" }
+        guard !project.isHibernated else { return "project \"\(project.name)\" is already hibernated" }
+        hibernateProject(project, confirmIfBusy: false)
+        return nil
+    }
+
+    /// Wake the named project (CLI, case-insensitive). Returns an error or nil.
+    func wakeProjectNamed(_ name: String) -> String? {
+        let matches = workspace.projects.filter { $0.name.lowercased() == name.lowercased() }
+        guard let project = matches.first else { return "no project named \"\(name)\"" }
+        guard matches.count == 1 else { return "\(matches.count) projects named \"\(name)\" — use the sidebar" }
+        guard project.isHibernated else { return "project \"\(project.name)\" is not hibernated" }
+        wakeProject(project)
+        return nil
+    }
+
     /// Toggles hibernate/wake for the project at `index` (sidebar menu).
     func toggleHibernation(at index: Int) {
         guard workspace.projects.indices.contains(index) else { return }

@@ -31,6 +31,11 @@ public enum ControlRequest: Equatable, Sendable {
     /// `focus` switches to it. The response is `.pane` with the first pane's
     /// short id.
     case newProject(path: String, name: String?, gitInit: Bool, focus: Bool)
+    /// Hibernate the named project (case-insensitive): free its sessions,
+    /// processes, and panes, keeping its layout. Response `.ok`.
+    case hibernateProject(name: String)
+    /// Wake the named hibernated project — fresh shells, layout intact. `.ok`.
+    case wakeProject(name: String)
     /// Close the targeted pane (its tab when it's the last pane), or the
     /// whole tab containing it when `wholeTab` is set.
     case close(target: PaneSelector, wholeTab: Bool)
@@ -79,6 +84,10 @@ extension ControlRequest: Codable {
             )
         case "remove-project":
             self = .removeProject(name: try container.decode(String.self, forKey: .project))
+        case "hibernate":
+            self = .hibernateProject(name: try container.decode(String.self, forKey: .project))
+        case "wake":
+            self = .wakeProject(name: try container.decode(String.self, forKey: .project))
         case "new-project":
             self = .newProject(
                 path: try container.decode(String.self, forKey: .path),
@@ -135,6 +144,12 @@ extension ControlRequest: Codable {
             try container.encode(focus, forKey: .focus)
         case .removeProject(let name):
             try container.encode("remove-project", forKey: .command)
+            try container.encode(name, forKey: .project)
+        case .hibernateProject(let name):
+            try container.encode("hibernate", forKey: .command)
+            try container.encode(name, forKey: .project)
+        case .wakeProject(let name):
+            try container.encode("wake", forKey: .command)
             try container.encode(name, forKey: .project)
         case .newProject(let path, let name, let gitInit, let focus):
             try container.encode("new-project", forKey: .command)

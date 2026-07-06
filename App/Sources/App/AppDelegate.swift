@@ -988,6 +988,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return .error(message)
             }
             return .ok
+        case .hibernateProject(let name):
+            if let message = tvc.hibernateProjectNamed(name) { return .error(message) }
+            return .ok
+        case .wakeProject(let name):
+            if let message = tvc.wakeProjectNamed(name) { return .error(message) }
+            return .ok
         case .newProject(let path, let name, let gitInit, let focus):
             switch tvc.newProject(path: path, name: name, gitInit: gitInit, focus: focus) {
             case .success(let pane): return .pane(pane)

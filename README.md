@@ -351,6 +351,8 @@ zetty break --pane 1a2b3c4d              # move a pane into its own tab
 zetty add-project ~/work/api             # add an existing directory as a project
 zetty new-project ~/work/new --git       # create a folder + add it (optional git init)
 zetty remove-project api                 # close a project's tabs (no confirmation)
+zetty hibernate api                      # free a project's sessions/processes (keeps layout)
+zetty wake api                           # wake a hibernated project (fresh shells)
 zetty focus --cwd ~/work/api
 zetty close --pane 1a2b3c4d --tab
 zetty reload                             # same as ⇧⌘,

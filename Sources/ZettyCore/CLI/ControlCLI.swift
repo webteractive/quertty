@@ -36,6 +36,9 @@ public enum ControlCLI {
       zetty remove-project <name>           remove a project (closes its tabs and
                                               ends their sessions; no confirmation;
                                               the last project can't be removed)
+      zetty hibernate <name>                free a project's sessions/processes/
+                                              panes (keeps its layout)
+      zetty wake <name>                     wake a hibernated project (fresh shells)
       zetty split [--pane <id> | --cwd <path>] [--horizontal]
                                               split a pane (vertical by default);
                                               prints the new pane's id on stdout
@@ -72,7 +75,7 @@ public enum ControlCLI {
     public static func recognizes(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
         return ["status", "ls", "send", "capture", "new-tab", "add-project", "new-project",
-                "remove-project", "split", "break", "focus", "close", "reload", "quit",
+                "remove-project", "hibernate", "wake", "split", "break", "focus", "close", "reload", "quit",
                 "help", "--help", "-h"].contains(first)
     }
 
@@ -102,6 +105,10 @@ public enum ControlCLI {
             return runNewProject(arguments)
         case "remove-project":
             return runRemoveProject(arguments)
+        case "hibernate":
+            return runProjectByName(arguments, verb: "hibernate") { .hibernateProject(name: $0) }
+        case "wake":
+            return runProjectByName(arguments, verb: "wake") { .wakeProject(name: $0) }
         case "split":
             return runSplit(arguments)
         case "break":
@@ -306,6 +313,20 @@ public enum ControlCLI {
             return failure("remove-project needs a project name")
         }
         return expectOK(.removeProject(name: name), success: nil)
+    }
+
+    /// Shared handler for name-targeted project commands (hibernate/wake).
+    private static func runProjectByName(_ arguments: [String], verb: String,
+                                         _ make: (String) -> ControlRequest) -> Int32 {
+        if arguments.contains("--help") || arguments.contains("-h") {
+            print(usage)
+            return 0
+        }
+        let name = arguments.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            return failure("\(verb) needs a project name")
+        }
+        return expectOK(make(name), success: nil)
     }
 
     private static func runSplit(_ arguments: [String]) -> Int32 {
