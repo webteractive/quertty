@@ -30,6 +30,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// is released on last-window-close, BEFORE terminate; a weak ref would be nil
     /// at save time and the workspace would never persist).
     private var terminalViewController: TerminalViewController?
+    private lazy var updateChecker = UpdateChecker(
+        currentVersion: (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "")
+    private var updateTimer: Timer?
 
     /// User config (`~/.config/zetty/config`) and its store.
     private let configStore = ConfigStore()
@@ -156,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tvc.onRenameProject = { [weak self] project in self?.promptRenameProject(project) }
         tvc.onOpenProjectSettings = { [weak self] project in self?.presentProjectSettings(project) }
         tvc.onOpenAgentSettings = { [weak self] project in self?.presentProjectSettings(project, initialTab: "agents") }
+        tvc.onUpdatePillClicked = { [weak self] in self?.openLatestRelease() }
         tvc.onActiveProjectChanged = { [weak self] in self?.applyThemeForActiveProject() }
         tvc.layoutTemplateProvider = { [weak self] project in
             ProjectFileIO.load(projectRoot: project.rootPath)?.layoutTemplate
@@ -228,6 +232,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         watcher.start()
         configWatcher = watcher
+
+        startUpdateChecks()
+    }
+
+    // MARK: - Update checks
+
+    /// Auto-check on launch + a periodic timer, gated by config + a 6h throttle.
+    private func startUpdateChecks() {
+        guard appConfig.checkUpdates else { return }
+        runUpdateCheckIfDue()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600, repeats: true) { [weak self] _ in
+            self?.runUpdateCheckIfDue()
+        }
+    }
+
+    private func runUpdateCheckIfDue() {
+        guard appConfig.checkUpdates else { return }
+        let key = "Zetty.lastUpdateCheck"
+        let last = UserDefaults.standard.double(forKey: key)
+        let now = Date().timeIntervalSince1970
+        guard now - last >= 6 * 3600 else { return }
+        UserDefaults.standard.set(now, forKey: key)
+        updateChecker.check { [weak self] result in
+            if case .success(let update) = result { self?.terminalViewController?.showUpdate(update) }
+        }
+    }
+
+    /// Status-bar pill click: open the release page (refresh from a live check).
+    private func openLatestRelease() {
+        updateChecker.check { [weak self] result in
+            guard case .success(let update) = result, let update else { return }
+            self?.terminalViewController?.showUpdate(update)
+            NSWorkspace.shared.open(update.url)
+        }
+    }
+
+    /// Manual "Check for Updates…" — always runs, reports the outcome.
+    @objc private func checkForUpdates(_ sender: Any?) {
+        updateChecker.check { [weak self] result in
+            switch result {
+            case .success(let update):
+                self?.terminalViewController?.showUpdate(update)
+                if update == nil { self?.showUpdateInfo("You're up to date.") }
+            case .failure:
+                self?.showUpdateInfo("Couldn't check for updates.")
+            }
+        }
+    }
+
+    private func showUpdateInfo(_ text: String) {
+        let alert = NSAlert()
+        alert.messageText = text
+        alert.addButton(withTitle: "OK")
+        if let window = terminalViewController?.view.window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
     }
 
     /// Persists the config, suppressing the watcher's self-write bounce.
@@ -1025,6 +1087,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsItem.keyEquivalentModifierMask = [.command]
         settingsItem.target = self
         appMenu.addItem(settingsItem)
+
+        let checkUpdatesItem = NSMenuItem(
+            title: "Check for Updates\u{2026}",
+            action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        checkUpdatesItem.target = self
+        appMenu.addItem(checkUpdatesItem)
 
         let reloadConfig = NSMenuItem(
             title: "Reload Configuration",

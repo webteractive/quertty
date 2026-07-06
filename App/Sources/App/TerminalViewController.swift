@@ -153,6 +153,13 @@ final class TerminalViewController: NSViewController {
 
     /// Called to cycle to the next color scheme (⌘⇧T).
     var onCycleScheme: (() -> Void)?
+    /// The status-bar "update available" pill was clicked.
+    var onUpdatePillClicked: (() -> Void)?
+
+    /// Shows/hides the status-bar update pill (driven by AppDelegate's checker).
+    func showUpdate(_ update: AvailableUpdate?) {
+        statusBarView?.setUpdate(update)
+    }
 
     /// Called to switch the appearance axis (system / dark / light).
     var onSetAppearance: ((AppearanceMode) -> Void)?
@@ -638,6 +645,7 @@ final class TerminalViewController: NSViewController {
         statusBar.onSelectAppearance = { [weak self] mode in self?.onSetAppearance?(mode) }
         statusBar.onSelectScheme = { [weak self] scheme in self?.onSelectScheme?(scheme) }
         statusBar.onShowEditorMenu = { [weak self] anchor in self?.showEditorMenu(from: anchor) }
+        statusBar.onUpdateClicked = { [weak self] in self?.onUpdatePillClicked?() }
         container.addSubview(statusBar)
         NSLayoutConstraint.activate([
             statusBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),

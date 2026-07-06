@@ -41,6 +41,10 @@ final class StatusBarView: NSView {
 
     // Right: "Open ▾" pill · appearance · scheme · shell · zetty build · libghostty.
     private let editorPill = NSView()
+    /// "Update available" pill — hidden unless a newer release exists.
+    private let updateButton = NSButton()
+    var onUpdateClicked: (() -> Void)?
+
     private let editorButton = NSButton()
     private let appearanceButton = NSButton()
     private let sep0 = NSTextField(labelWithString: "·")
@@ -127,7 +131,17 @@ final class StatusBarView: NSView {
         // The cwd is the one label allowed to give way: the stack may compress
         // and the path truncates (by the head) before anything else moves.
         leftStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        configureStack(rightStack, views: [editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, zettyLabel])
+        updateButton.isBordered = false
+        updateButton.wantsLayer = true
+        updateButton.layer?.cornerRadius = 9
+        updateButton.font = ZTheme.monoFont(size: 11)
+        updateButton.target = self
+        updateButton.action = #selector(updateClicked)
+        updateButton.isHidden = true
+        updateButton.translatesAutoresizingMaskIntoConstraints = false
+
+        configureStack(rightStack, views: [updateButton, editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, zettyLabel])
+        rightStack.setCustomSpacing(10, after: updateButton)
         rightStack.setCustomSpacing(10, after: editorPill)
 
         addSubview(topBorder)
@@ -229,6 +243,22 @@ final class StatusBarView: NSView {
 
     @objc private func editorClicked() {
         onShowEditorMenu?(editorPill)
+    }
+
+    @objc private func updateClicked() {
+        onUpdateClicked?()
+    }
+
+    /// Shows/hides the update pill; `nil` hides it.
+    func setUpdate(_ update: AvailableUpdate?) {
+        if let update {
+            updateButton.title = " ↑ Update \(update.version) "
+            updateButton.layer?.backgroundColor = ZTheme.current.bg3Color.cgColor
+            updateButton.contentTintColor = ZTheme.current.accentColor
+            updateButton.isHidden = false
+        } else {
+            updateButton.isHidden = true
+        }
     }
 
     // MARK: - Content
