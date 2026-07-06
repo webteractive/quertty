@@ -829,6 +829,34 @@ final class TerminalViewController: NSViewController {
     /// settings; nil closure or nil fields → default rendering.
     var projectIdentity: ((ProjectRuntime) -> (color: NSColor?, glyph: String?))?
 
+    /// Resolves a project's enabled spawnable agents (from per-project settings).
+    var agentsProvider: ((ProjectRuntime) -> [ResolvedSpawnAgent])?
+
+    /// Surfaces awaiting the inline agent chooser, mapped to their options.
+    private var panesPendingAgentChoice: [UUID: [ResolvedSpawnAgent]] = [:]
+
+    /// Marks a freshly, interactively spawned surface as pending the chooser,
+    /// when its project has enabled agents and no template command is queued.
+    func markPendingAgentChoiceIfEnabled(_ surfaceID: UUID) {
+        guard pendingStartupCommands[surfaceID] == nil,
+              let project = workspace.project(containing: surfaceID),
+              let agents = agentsProvider?(project), !agents.isEmpty else { return }
+        panesPendingAgentChoice[surfaceID] = agents
+    }
+
+    /// User picked an agent: inject its command into the (already running) shell.
+    func chooseAgent(surfaceID: UUID, command: String) {
+        panesPendingAgentChoice.removeValue(forKey: surfaceID)
+        if let surface = surface(with: surfaceID) {
+            _ = registry.sendText(command + "\r", to: surface)
+        }
+    }
+
+    /// User dismissed the chooser (Normal shell / Esc): leave the plain shell.
+    func dismissAgentChoice(surfaceID: UUID) {
+        panesPendingAgentChoice.removeValue(forKey: surfaceID)
+    }
+
     /// Sidebar "Rename…" — payload is the project runtime (the receiver
     /// resolves and persists the name override).
     var onRenameProject: ((ProjectRuntime) -> Void)?
@@ -1915,6 +1943,9 @@ final class TerminalViewController: NSViewController {
     /// Open a new tab and focus its single fresh pane.  Key equivalent: ⌘T.
     @objc func newTab(_ sender: Any?) {
         workspace.activeTabList.newTab()
+        if let id = workspace.activeTabList.activeTree.focusedSurface?.id {
+            markPendingAgentChoiceIfEnabled(id)
+        }
         refreshTabBar()
         refreshSidebar()
         rebuildSurfaceNodeView()

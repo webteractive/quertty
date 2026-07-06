@@ -18,6 +18,7 @@ extension TerminalViewController {
         let workingDir = paneTree.focusedSurface?.workingDir ?? NSHomeDirectory()
         let newSurface = Surface(workingDir: workingDir)
         paneTree.splitFocused(direction: .vertical, newSurface: newSurface)
+        markPendingAgentChoiceIfEnabled(newSurface.id)
         rebuildAndFocus()
     }
 
@@ -26,6 +27,7 @@ extension TerminalViewController {
         let workingDir = paneTree.focusedSurface?.workingDir ?? NSHomeDirectory()
         let newSurface = Surface(workingDir: workingDir)
         paneTree.splitFocused(direction: .horizontal, newSurface: newSurface)
+        markPendingAgentChoiceIfEnabled(newSurface.id)
         rebuildAndFocus()
     }
 

@@ -146,6 +146,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let resolved = self.resolvedSettings(for: project)
             return (ZTheme.projectColor(id: resolved.colorID), resolved.icon)
         }
+        tvc.agentsProvider = { [weak self] project in
+            guard let self else { return [] }
+            return SpawnableAgent.resolve(self.projectSettings.settings(for: project.rootPath)?.agents)
+        }
         tvc.onRenameProject = { [weak self] project in self?.promptRenameProject(project) }
         tvc.onOpenProjectSettings = { [weak self] project in self?.presentProjectSettings(project) }
         tvc.onActiveProjectChanged = { [weak self] in self?.applyThemeForActiveProject() }
