@@ -328,11 +328,12 @@ written into the repo). The CLI (`zetty new-tab` / `split`) never prompts.
 
 Zetty checks [GitHub Releases](https://github.com/webteractive/zetty/releases)
 for a newer version on launch and periodically. When one exists, an **"↑ Update
-&lt;version&gt;"** pill appears in the status bar — click it to open the download
-page. **App menu → Check for Updates…** runs the check on demand. Set
-`check-updates = false` to disable the automatic checks (the menu item still
-works). Updating is manual: download the new DMG and replace the app (Zetty
-does not self-update).
+&lt;version&gt;"** pill appears in the status bar. Click it (or use **App menu →
+Check for Updates…**) and confirm **Install & Restart** — Zetty downloads the
+release DMG, verifies its SHA-256, swaps itself in place, and relaunches (no
+manual download or quarantine step needed for in-app updates). You can still
+choose **View Release Notes** to open the page instead. Set `check-updates =
+false` to disable the automatic checks (the menu item still works).
 
 ### Control CLI
 
