@@ -32,6 +32,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var terminalViewController: TerminalViewController?
     private lazy var updateChecker = UpdateChecker(
         currentVersion: (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "")
+    private let updateInstaller = UpdateInstaller()
+    private var updateProgressAlert: NSAlert?
     private var updateTimer: Timer?
 
     /// User config (`~/.config/zetty/config`) and its store.
@@ -281,36 +283,103 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// Version-pill click: check now, reflect the result in the pill, open the
-    /// release page if a newer version exists, else report up-to-date.
+    /// Version-pill click: check now, reflect the result in the pill, then
+    /// offer to install a newer version (or report up-to-date).
     private func versionPillClicked() {
+        checkThenOfferUpdate()
+    }
+
+    /// Manual "Check for Updates…" — always runs, reports the outcome.
+    @objc private func checkForUpdates(_ sender: Any?) {
+        checkThenOfferUpdate()
+    }
+
+    private func checkThenOfferUpdate() {
         updateChecker.check { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let update):
                 self.terminalViewController?.showUpdate(update)
-                if let update {
-                    NSWorkspace.shared.open(update.url)
-                } else {
-                    self.showUpdateInfo("You're up to date.")
-                }
+                if let update { self.presentUpdate(update) }
+                else { self.showUpdateInfo("You're up to date.") }
             case .failure:
                 self.showUpdateInfo("Couldn't check for updates.")
             }
         }
     }
 
-    /// Manual "Check for Updates…" — always runs, reports the outcome.
-    @objc private func checkForUpdates(_ sender: Any?) {
-        updateChecker.check { [weak self] result in
-            switch result {
-            case .success(let update):
-                self?.terminalViewController?.showUpdate(update)
-                if update == nil { self?.showUpdateInfo("You're up to date.") }
-            case .failure:
-                self?.showUpdateInfo("Couldn't check for updates.")
+    /// Confirm dialog for a newer version, then download+install in place.
+    /// Falls back to the release page when the release isn't installable.
+    private func presentUpdate(_ update: AvailableUpdate) {
+        let alert = NSAlert()
+        alert.messageText = "Update to \(update.version)?"
+        if update.isInstallable {
+            alert.informativeText = "Zetty will download the update and restart."
+            alert.addButton(withTitle: "Install & Restart")
+            alert.addButton(withTitle: "View Release Notes")
+            alert.addButton(withTitle: "Later")
+        } else {
+            alert.informativeText = "A newer version is available on the releases page."
+            alert.addButton(withTitle: "View Release Notes")
+            alert.addButton(withTitle: "Later")
+        }
+        let respond: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            if update.isInstallable {
+                switch response {
+                case .alertFirstButtonReturn: self.startInstall(update)
+                case .alertSecondButtonReturn: NSWorkspace.shared.open(update.releasePage)
+                default: break
+                }
+            } else if response == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(update.releasePage)
             }
         }
+        if let window = terminalViewController?.view.window {
+            alert.beginSheetModal(for: window, completionHandler: respond)
+        } else {
+            respond(alert.runModal())
+        }
+    }
+
+    /// Runs the installer behind a modeless progress sheet. On success the
+    /// installer terminates the app into the swap helper; on failure the
+    /// current app is untouched and we surface the reason.
+    private func startInstall(_ update: AvailableUpdate) {
+        let progress = NSAlert()
+        progress.messageText = "Updating to \(update.version)…"
+        progress.informativeText = "Downloading…"
+        let bar = NSProgressIndicator(frame: NSRect(x: 0, y: 0, width: 260, height: 16))
+        bar.isIndeterminate = false
+        bar.minValue = 0; bar.maxValue = 1
+        progress.accessoryView = bar
+        updateProgressAlert = progress
+
+        let onProgress: (UpdateInstallProgress) -> Void = { [weak progress, weak bar] p in
+            switch p {
+            case .downloading(let f): bar?.doubleValue = f; progress?.informativeText = "Downloading…"
+            case .verifying: bar?.isIndeterminate = true; bar?.startAnimation(nil); progress?.informativeText = "Verifying…"
+            case .preparing: progress?.informativeText = "Preparing…"
+            case .relaunching: progress?.informativeText = "Restarting…"
+            }
+        }
+        let onDone: (Result<Void, UpdateInstallError>) -> Void = { [weak self] result in
+            guard let self else { return }
+            if let window = self.terminalViewController?.view.window,
+               let sheet = self.updateProgressAlert?.window {
+                window.endSheet(sheet)
+            }
+            self.updateProgressAlert = nil
+            if case .failure(let error) = result {
+                self.showUpdateInfo(String(describing: error))
+            }
+            // .success terminates the app from the installer.
+        }
+
+        if let window = terminalViewController?.view.window {
+            progress.beginSheetModal(for: window) { _ in }
+        }
+        updateInstaller.install(update, progress: onProgress, completion: onDone)
     }
 
     private func showUpdateInfo(_ text: String) {

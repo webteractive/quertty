@@ -3,11 +3,16 @@ import ZettyCore
 
 /// A newer release available for download.
 struct AvailableUpdate: Equatable {
-    let version: String   // e.g. "0.1.7"
-    let url: URL          // release page
+    let version: String       // e.g. "0.1.11"
+    let releasePage: URL      // release page (View Release Notes)
+    let dmgURL: URL?          // ".dmg" asset, when present
+    let checksumURL: URL?     // ".dmg.sha256" asset, when present
+
+    /// In-place install is possible only with both the image and its checksum.
+    var isInstallable: Bool { dmgURL != nil && checksumURL != nil }
 }
 
-/// Checks the public GitHub releases API for a newer version. Notify-only.
+/// Checks the public GitHub releases API for a newer version.
 final class UpdateChecker {
     private static let endpoint = URL(string:
         "https://api.github.com/repos/webteractive/zetty/releases/latest")!
@@ -21,9 +26,19 @@ final class UpdateChecker {
     private struct Release: Decodable {
         let tagName: String
         let htmlURL: String
+        let assets: [Asset]
+        struct Asset: Decodable {
+            let name: String
+            let browserDownloadURL: String
+            enum CodingKeys: String, CodingKey {
+                case name
+                case browserDownloadURL = "browser_download_url"
+            }
+        }
         enum CodingKeys: String, CodingKey {
             case tagName = "tag_name"
             case htmlURL = "html_url"
+            case assets
         }
     }
 
@@ -48,8 +63,16 @@ final class UpdateChecker {
                 if SemVer.isNewer(latest: release.tagName, than: self.currentVersion) {
                     let version = release.tagName.hasPrefix("v")
                         ? String(release.tagName.dropFirst()) : release.tagName
-                    let url = URL(string: release.htmlURL) ?? Self.releasesPage
-                    result = .success(AvailableUpdate(version: version, url: url))
+                    let page = URL(string: release.htmlURL) ?? Self.releasesPage
+                    let assets = release.assets.compactMap { asset -> ReleaseAsset? in
+                        URL(string: asset.browserDownloadURL).map {
+                            ReleaseAsset(name: asset.name, downloadURL: $0)
+                        }
+                    }
+                    let picked = UpdateAssets.select(from: assets)
+                    result = .success(AvailableUpdate(
+                        version: version, releasePage: page,
+                        dmgURL: picked.dmg, checksumURL: picked.checksum))
                 } else {
                     result = .success(nil)
                 }
