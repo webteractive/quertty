@@ -1013,14 +1013,20 @@ private final class ProjectCellView: NSTableCellView {
         // status colors carry meaning and always win.
         let hasAgent = agentStatus != nil
         let defaultGlyph = (hasAgent || isActive) ? "diamond.fill" : "diamond"
-        let glyphName = isHibernated ? "moon.zzz" : (customGlyph ?? defaultGlyph)
         let glyphConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        glyphView.image = NSImage(systemSymbolName: glyphName, accessibilityDescription: "Project")?
-            .withSymbolConfiguration(glyphConfig)
-        glyphView.contentTintColor = isHibernated ? ZTheme.current.fg3Color
-            : (agentStatusColor(agentStatus)
-                ?? projectColor
-                ?? (isActive ? ZTheme.current.accentColor : ZTheme.current.fg3Color))
+        if !isHibernated, let custom = customGlyph, ProjectIcon.isEmoji(custom) {
+            // Emoji icons are colored glyphs — draw as-is, no template tint.
+            glyphView.image = ProjectIcon.emojiImage(custom, pointSize: 13)
+            glyphView.contentTintColor = nil
+        } else {
+            let glyphName = isHibernated ? "moon.zzz" : (customGlyph ?? defaultGlyph)
+            glyphView.image = NSImage(systemSymbolName: glyphName, accessibilityDescription: "Project")?
+                .withSymbolConfiguration(glyphConfig)
+            glyphView.contentTintColor = isHibernated ? ZTheme.current.fg3Color
+                : (agentStatusColor(agentStatus)
+                    ?? projectColor
+                    ?? (isActive ? ZTheme.current.accentColor : ZTheme.current.fg3Color))
+        }
 
         // Pinned rows use a filled accent star; unpinned rows show a dim hollow star.
         let symbolName = isPinned ? "star.fill" : "star"

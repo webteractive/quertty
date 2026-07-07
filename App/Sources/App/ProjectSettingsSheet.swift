@@ -7,12 +7,6 @@ import ZettyCore
 /// `onSave` — persistence and re-application live in AppDelegate.
 final class ProjectSettingsSheet: NSObject {
 
-    /// Curated SF Symbols offered as project icons (plus "Default").
-    static let iconChoices: [String] = [
-        "folder", "terminal", "hammer", "wrench.and.screwdriver", "globe",
-        "server.rack", "shippingbox", "book", "flask", "bolt",
-    ]
-
     /// Keeps the active sheet (controls + closures) alive until it ends.
     private static var active: ProjectSettingsSheet?
 
@@ -23,7 +17,7 @@ final class ProjectSettingsSheet: NSObject {
     private let nameField: NSTextField
     private var swatchButtons: [NSButton] = []
     private var selectedColorID: String?
-    private let iconPopup: NSPopUpButton
+    private let iconPicker: IconPickerControl
     private let appearancePopup: NSPopUpButton
     private let themeDarkPopup: NSPopUpButton
     private let themeLightPopup: NSPopUpButton
@@ -106,15 +100,7 @@ final class ProjectSettingsSheet: NSObject {
 
         selectedColorID = current.color
 
-        iconPopup = NSPopUpButton(frame: .zero, pullsDown: false)
-        iconPopup.addItem(withTitle: "Default")
-        for symbol in Self.iconChoices {
-            iconPopup.addItem(withTitle: symbol)
-            iconPopup.lastItem?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: symbol)
-        }
-        if let icon = current.icon, let index = Self.iconChoices.firstIndex(of: icon) {
-            iconPopup.selectItem(at: index + 1)
-        }
+        iconPicker = IconPickerControl(selected: current.icon)
 
         // Appearance + theme overrides, modeled on the global keys: an
         // appearance axis plus a scheme per axis, each independently
@@ -314,7 +300,7 @@ final class ProjectSettingsSheet: NSObject {
         let general = NSStackView(views: [
             row("Name", nameField),
             row("Color", colorRow),
-            row("Icon", iconPopup),
+            row("Icon", iconPicker),
             row("Appearance", appearancePopup),
             row("Dark Theme", themeDarkPopup),
             row("Light Theme", themeLightPopup),
@@ -450,8 +436,7 @@ final class ProjectSettingsSheet: NSObject {
         let trimmed = nameField.stringValue.trimmingCharacters(in: .whitespaces)
         edited.name = trimmed.isEmpty ? nil : trimmed
         edited.color = selectedColorID
-        edited.icon = iconPopup.indexOfSelectedItem > 0
-            ? Self.iconChoices[iconPopup.indexOfSelectedItem - 1] : nil
+        edited.icon = iconPicker.selectedIcon
         edited.appearanceOverride = appearancePopup.indexOfSelectedItem > 0
             ? Self.appearanceChoices[appearancePopup.indexOfSelectedItem - 1] : nil
         edited.themeDarkOverride = themeDarkPopup.indexOfSelectedItem > 0
