@@ -7,8 +7,7 @@ Guidance for AI agents and contributors working in this repo.
 Zetty is a native macOS (Linux later) GUI **terminal multiplexer** built on
 **full libghostty** (via the prebuilt `libghostty-spm` package) with a Swift
 AppKit application layer. Work is organized around pinnable **projects**, each
-owning **tabs** and nested **split panes**. See [`README.md`](README.md) and the
-PRD in `docs/plans/`.
+owning **tabs** and nested **split panes**. See [`README.md`](README.md).
 
 ## Layout
 
