@@ -96,6 +96,10 @@ final class SidebarView: NSView {
     /// (projectIndex, fromTab, toTab).
     var onMoveTab: ((Int, Int, Int) -> Void)?
 
+    /// Called when a project row is drag-reordered within its section (Pinned or
+    /// Projects): (fromProjectIndex, toProjectIndex), both real `projects` indices.
+    var onMoveProject: ((Int, Int) -> Void)?
+
     /// Called when the user clicks the "+" Add Project button.
     var onAddProject: (() -> Void)?
     /// Called when the user chooses "New Project…" from the "+" menu.
@@ -125,9 +129,9 @@ final class SidebarView: NSView {
     /// Current filter text (case-insensitive substring on project name).
     private var filterText: String = ""
 
-    /// True while a tab row is being drag-reordered — freezes `update(...)`
-    /// reloads, which would cancel the outline view's drag session.
-    private var isReorderingTabs = false
+    /// True while a tab or project row is being drag-reordered — freezes
+    /// `update(...)` reloads, which would cancel the outline view's drag session.
+    private var isReordering = false
 
     /// The top-level rows currently displayed (headers + visible projects).
     private var topLevel: [OutlineItem.Kind] = []
@@ -234,7 +238,7 @@ final class SidebarView: NSView {
         outlineView.delegate = self
         outlineView.translatesAutoresizingMaskIntoConstraints = false
         // Tab child rows can be drag-reordered within their project.
-        outlineView.registerForDraggedTypes([SidebarView.tabDragType])
+        outlineView.registerForDraggedTypes([SidebarView.tabDragType, SidebarView.projectDragType])
         outlineView.setDraggingSourceOperationMask(.move, forLocal: true)
 
         // Context menu — populated per-row in `menuNeedsUpdate`.
@@ -445,7 +449,7 @@ final class SidebarView: NSView {
     func update(projects: [SidebarProject], activeProject: Int, activeTab: Int) {
         // Reloading mid-drag cancels the outline view's drag session (live
         // agents retitle rows every second) — freeze until the drop lands.
-        guard !isReorderingTabs else { return }
+        guard !isReordering else { return }
         self.projects = projects
         self.activeProject = activeProject
         self.activeTab = activeTab
@@ -676,42 +680,68 @@ extension SidebarView: NSOutlineViewDataSource {
         return !projects[p].isHibernated && projects[p].tabTitles.count >= 2
     }
 
-    // MARK: Tab drag-reorder
+    // MARK: Drag-reorder (tab children within a project · project rows within a section)
 
     static let tabDragType = NSPasteboard.PasteboardType("dev.more.zetty.sidebar-tab")
+    static let projectDragType = NSPasteboard.PasteboardType("dev.more.zetty.sidebar-project")
 
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
-        guard let obj = item as? OutlineItem,
-              case .tab(let project, let tab) = obj.kind else { return nil }
-        let pasteboardItem = NSPasteboardItem()
-        pasteboardItem.setString("\(project):\(tab)", forType: SidebarView.tabDragType)
-        return pasteboardItem
+        guard let obj = item as? OutlineItem else { return nil }
+        switch obj.kind {
+        case .tab(let project, let tab):
+            let pb = NSPasteboardItem()
+            pb.setString("\(project):\(tab)", forType: SidebarView.tabDragType)
+            return pb
+        case .project(let p):
+            // No project drag while filtering (visible rows are a subset, so
+            // offsets don't map to neighbours) or for hibernated rows (that
+            // section isn't reorderable).
+            guard filterText.trimmingCharacters(in: .whitespaces).isEmpty,
+                  projects.indices.contains(p), !projects[p].isHibernated else { return nil }
+            let pb = NSPasteboardItem()
+            pb.setString("\(p)", forType: SidebarView.projectDragType)
+            return pb
+        case .header:
+            return nil
+        }
     }
 
     func outlineView(
         _ outlineView: NSOutlineView, draggingSession session: NSDraggingSession,
         willBeginAt screenPoint: NSPoint, forItems draggedItems: [Any]
     ) {
-        isReorderingTabs = true
+        isReordering = true
     }
 
     func outlineView(
         _ outlineView: NSOutlineView, draggingSession session: NSDraggingSession,
         endedAt screenPoint: NSPoint, operation: NSDragOperation
     ) {
-        isReorderingTabs = false
+        isReordering = false
     }
 
     func outlineView(
         _ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo,
         proposedItem item: Any?, proposedChildIndex index: Int
     ) -> NSDragOperation {
-        // Only between the SAME project's tab children (never onto a row).
-        guard index >= 0,
-              let source = draggedTab(from: info),
-              let obj = item as? OutlineItem,
-              case .project(let targetProject) = obj.kind,
-              targetProject == source.project else { return [] }
+        // Tab child: only between the SAME project's tab children (never onto a row).
+        if let source = draggedTab(from: info) {
+            guard index >= 0,
+                  let obj = item as? OutlineItem,
+                  case .project(let targetProject) = obj.kind,
+                  targetProject == source.project else { return [] }
+            return .move
+        }
+
+        // Project row: only top-level gaps, snapped to stay inside its section.
+        guard let from = draggedProject(from: info),
+              projects.indices.contains(from),
+              let range = projectRowRange(for: projects[from].isPinned ? .pinned : .projects)
+        else { return [] }
+        let clamped = clampProjectDrop(index, into: range)
+        if item != nil || index != clamped {
+            outlineView.setDropItem(nil, dropChildIndex: clamped)
+        }
         return .move
     }
 
@@ -719,16 +749,37 @@ extension SidebarView: NSOutlineViewDataSource {
         _ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo,
         item: Any?, childIndex index: Int
     ) -> Bool {
-        guard index >= 0,
-              let source = draggedTab(from: info),
-              let obj = item as? OutlineItem,
-              case .project(let targetProject) = obj.kind,
-              targetProject == source.project else { return false }
-        // The gap index counts the row's own old slot when moving down.
-        let destination = index > source.tab ? index - 1 : index
-        guard destination != source.tab else { return false }
-        isReorderingTabs = false
-        onMoveTab?(source.project, source.tab, destination)
+        // Tab child move within a project.
+        if let source = draggedTab(from: info) {
+            guard index >= 0,
+                  let obj = item as? OutlineItem,
+                  case .project(let targetProject) = obj.kind,
+                  targetProject == source.project else { return false }
+            // The gap index counts the row's own old slot when moving down.
+            let destination = index > source.tab ? index - 1 : index
+            guard destination != source.tab else { return false }
+            isReordering = false
+            onMoveTab?(source.project, source.tab, destination)
+            return true
+        }
+
+        // Project row move within a section.
+        guard let from = draggedProject(from: info),
+              projects.indices.contains(from),
+              let range = projectRowRange(for: projects[from].isPinned ? .pinned : .projects) else { return false }
+        let sectionOffsets = topLevel[range].compactMap { kind -> Int? in
+            if case .project(let o) = kind { return o } else { return nil }
+        }
+        guard let base = sectionOffsets.first else { return false }
+        let clamped = clampProjectDrop(index, into: range)
+        // Section rows are contiguous in model order, so a topLevel gap maps to a
+        // model gap by offsetting from the section's first project.
+        let modelGap = base + (clamped - range.lowerBound)
+        // The gap counts the row's own old slot when moving down.
+        let to = modelGap > from ? modelGap - 1 : modelGap
+        guard to != from else { return false }
+        isReordering = false
+        onMoveProject?(from, to)
         return true
     }
 
@@ -738,6 +789,27 @@ extension SidebarView: NSOutlineViewDataSource {
         let parts = payload.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 2 else { return nil }
         return (parts[0], parts[1])
+    }
+
+    /// Decodes the dragged project's offset from its pasteboard payload.
+    private func draggedProject(from info: NSDraggingInfo) -> Int? {
+        info.draggingPasteboard.string(forType: SidebarView.projectDragType).flatMap(Int.init)
+    }
+
+    /// The half-open `topLevel` index range of the project rows under `section`'s
+    /// header, or nil when the section isn't currently shown.
+    private func projectRowRange(for section: SidebarSection) -> Range<Int>? {
+        guard let headerIdx = topLevel.firstIndex(of: .header(section)) else { return nil }
+        var end = headerIdx + 1
+        while end < topLevel.count, case .project = topLevel[end] { end += 1 }
+        return (headerIdx + 1)..<end
+    }
+
+    /// Clamps a proposed drop gap into a section's insertion range (before its
+    /// first row … after its last). A drop-on-row (`index < 0`) snaps to the end.
+    private func clampProjectDrop(_ index: Int, into range: Range<Int>) -> Int {
+        let proposed = index < 0 ? range.upperBound : index
+        return min(max(proposed, range.lowerBound), range.upperBound)
     }
 }
 

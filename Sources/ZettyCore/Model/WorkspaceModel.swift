@@ -38,7 +38,7 @@ public final class WorkspaceModel {
         guard !restored.isEmpty else { return nil }
         projects = restored
         self.activeIndex = min(max(activeIndex, 0), restored.count - 1)
-        resort()
+        regroup()
     }
 
     public var activeProject: ProjectRuntime { projects[activeIndex] }
@@ -47,11 +47,12 @@ public final class WorkspaceModel {
     @discardableResult
     /// Adds a project. `makeActive` (default true) switches to it; pass false to
     /// add it in the background, leaving the current active project selected.
+    /// A new (unpinned) project lands at the bottom of its group.
     public func addProject(name: String, rootPath: String, makeActive: Bool = true) -> ProjectRuntime {
         let p = ProjectRuntime(name: name, rootPath: rootPath)
         projects.append(p)
         if makeActive { activeIndex = projects.count - 1 }
-        resort()   // preserves the active project by identity
+        regroup()   // preserves the active project by identity
         return p
     }
 
@@ -73,7 +74,21 @@ public final class WorkspaceModel {
     public func togglePin(at index: Int) {
         guard projects.indices.contains(index) else { return }
         projects[index].isPinned.toggle()
-        resort()   // pinning moves the project into the pinned group
+        regroup()   // pinning drops the project at the bottom of its new group
+    }
+
+    /// Moves a project from one position to another within the same section.
+    /// The active project is preserved by identity. Callers must keep the move
+    /// within one pin-group (Pinned ↔ Pinned, unpinned ↔ unpinned); a cross-group
+    /// move is rejected so the pinned-first invariant can't be broken.
+    public func moveProject(from: Int, to: Int) {
+        guard projects.indices.contains(from), projects.indices.contains(to),
+              from != to,
+              projects[from].isPinned == projects[to].isPinned else { return }
+        let activeID = projects[activeIndex].id
+        let moved = projects.remove(at: from)
+        projects.insert(moved, at: to)
+        activeIndex = projects.firstIndex { $0.id == activeID } ?? 0
     }
 
     /// The project owning `surfaceID`, or nil. Used by the app layer to
@@ -86,24 +101,21 @@ public final class WorkspaceModel {
         }
     }
 
-    /// Renames a project and re-sorts (name participates in sidebar order);
-    /// the active project is preserved by identity, like `togglePin`.
+    /// Renames a project in place. Order is manual, so renaming never moves the
+    /// project (unlike the old alphabetical sort).
     public func rename(projectAt index: Int, to newName: String) {
         guard projects.indices.contains(index) else { return }
         projects[index].name = newName
-        resort()
     }
 
-    /// Sort order: pinned projects first, then unpinned, each group ordered by
-    /// name (case-insensitive). The active project is preserved by identity so
-    /// `activeIndex` keeps pointing at the same project after reordering.
-    private func resort() {
+    /// Enforces the only ordering invariant: pinned projects come before
+    /// unpinned ones. Within each group the existing relative order is preserved
+    /// (manual order), because `filter` is stable. The active project is
+    /// preserved by identity so `activeIndex` keeps pointing at the same project.
+    private func regroup() {
         guard !projects.isEmpty else { return }
         let activeID = projects[activeIndex].id
-        projects.sort { a, b in
-            if a.isPinned != b.isPinned { return a.isPinned }
-            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
-        }
+        projects = projects.filter(\.isPinned) + projects.filter { !$0.isPinned }
         activeIndex = projects.firstIndex { $0.id == activeID } ?? 0
     }
 }

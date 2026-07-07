@@ -144,6 +144,35 @@ private func tempDir() throws -> URL {
     #expect(runtimes[0].isHibernated == true)
 }
 
+@Test func workspaceRoundTripsManualProjectOrder() throws {
+    // Establish a manual order (drag c above b), then save + restore and confirm
+    // the order survives via `sortOrder` (which used to be discarded on read).
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "a", rootPath: "/a"),
+        ProjectRuntime(name: "b", rootPath: "/b"),
+        ProjectRuntime(name: "c", rootPath: "/c"),
+    ], activeIndex: 0)!
+    ws.moveProject(from: 2, to: 1)                    // → [a, c, b]
+    #expect(ws.projects.map(\.name) == ["a", "c", "b"])
+
+    let snap = SessionSnapshot.workspace(from: ws)
+    #expect(snap.projects.map(\.sortOrder) == [0, 1, 2])   // written in final order
+    let decoded = try JSONDecoder().decode(Workspace.self, from: JSONEncoder().encode(snap))
+    let runtimes = SessionSnapshot.projectRuntimes(from: decoded)
+    #expect(runtimes.map(\.name) == ["a", "c", "b"])       // manual order restored
+}
+
+@Test func projectRuntimesRestoreInSortOrderRegardlessOfArrayOrder() throws {
+    // Even if the persisted array is out of order, sortOrder drives restoration.
+    let projects = [
+        Project(name: "b", rootPath: "/b", sortOrder: 1),
+        Project(name: "a", rootPath: "/a", sortOrder: 0),
+    ]
+    let ws = Workspace(projects: projects, activeProjectIndex: 0)
+    let runtimes = SessionSnapshot.projectRuntimes(from: ws)
+    #expect(runtimes.map(\.name) == ["a", "b"])
+}
+
 @Test func projectDecodesWithoutHibernatedField() throws {
     let json = #"{"id":"\#(UUID().uuidString)","name":"a","rootPath":"/a","isPinned":false,"sortOrder":0,"preserveSessions":false,"sessions":[]}"#
     let p = try JSONDecoder().decode(Project.self, from: Data(json.utf8))

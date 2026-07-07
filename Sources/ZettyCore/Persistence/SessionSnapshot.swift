@@ -86,7 +86,11 @@ public enum SessionSnapshot {
     /// the project's first session's tabs, reselecting the session's active tab.
     /// Returns `[]` for an empty workspace.
     public static func projectRuntimes(from workspace: Workspace) -> [ProjectRuntime] {
-        workspace.projects.map { project in
+        // Restore in persisted manual order. `workspace(from:)` writes `sortOrder`
+        // as the final array position, so sorting by it reproduces the order the
+        // user last dragged the sidebar into (a stable sort keeps ties as-is).
+        let ordered = workspace.projects.sorted { $0.sortOrder < $1.sortOrder }
+        return ordered.map { project in
             let session = project.sessions.first
             let trees = paneTrees(from: session?.tabs ?? [])
             let tabList = TabList(restoring: trees, activeIndex: session?.activeTabIndex ?? 0,
