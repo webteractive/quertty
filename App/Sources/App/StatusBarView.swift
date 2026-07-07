@@ -29,8 +29,11 @@ final class StatusBarView: NSView {
     // marks the active mode, fills stay on the bg3 surface.
     private let modeChip = NSTextField(labelWithString: "")
     private let zoomChip = NSTextField(labelWithString: " ZOOM ")
-    private let broadcastChip = NSTextField(labelWithString: " BROADCAST ")
+    private let broadcastPill = NSView()
+    private let broadcastButton = NSButton()
     private var shownBroadcastScope: BroadcastScope = .off
+    /// Clicked to cycle broadcast scope (Off → Tab → Project → Agents → Workspace).
+    var onBroadcastClicked: (() -> Void)?
 
     // Left: working directory, then git.
     private let cwdLabel = NSTextField(labelWithString: "")
@@ -129,13 +132,32 @@ final class StatusBarView: NSView {
             editorButton.centerYAnchor.constraint(equalTo: editorPill.centerYAnchor),
         ])
 
-        for chip in [modeChip, zoomChip, broadcastChip] {
+        for chip in [modeChip, zoomChip] {
             chip.wantsLayer = true
             chip.layer?.cornerRadius = 4
             chip.alignment = .center
             chip.translatesAutoresizingMaskIntoConstraints = false
             chip.isHidden = true
         }
+
+        // Broadcast: a clickable pill (like "Open ▾") showing the antenna icon
+        // + scope; clicking cycles the scope. Always visible so it doubles as
+        // the on/off control.
+        configureSwitch(broadcastButton, action: #selector(broadcastClicked))
+        broadcastButton.imagePosition = .imageLeading
+        broadcastButton.imageHugsTitle = true
+        broadcastPill.wantsLayer = true
+        broadcastPill.layer?.cornerRadius = 10
+        broadcastPill.layer?.borderWidth = 1
+        broadcastPill.layer?.shadowOffset = .zero
+        broadcastPill.translatesAutoresizingMaskIntoConstraints = false
+        broadcastPill.addSubview(broadcastButton)
+        NSLayoutConstraint.activate([
+            broadcastPill.heightAnchor.constraint(equalToConstant: 20),
+            broadcastButton.leadingAnchor.constraint(equalTo: broadcastPill.leadingAnchor, constant: 9),
+            broadcastButton.trailingAnchor.constraint(equalTo: broadcastPill.trailingAnchor, constant: -9),
+            broadcastButton.centerYAnchor.constraint(equalTo: broadcastPill.centerYAnchor),
+        ])
 
         configureStack(leftStack, views: [modeChip, zoomChip, cwdLabel, branchIcon, branchLabel, aheadLabel, behindLabel, changesLabel])
         leftStack.setCustomSpacing(10, after: zoomChip)
@@ -181,8 +203,8 @@ final class StatusBarView: NSView {
             cliButton.centerYAnchor.constraint(equalTo: cliPill.centerYAnchor),
         ])
 
-        configureStack(rightStack, views: [broadcastChip, cliPill, editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, versionPill])
-        rightStack.setCustomSpacing(10, after: broadcastChip)
+        configureStack(rightStack, views: [broadcastPill, cliPill, editorPill, appearanceButton, sep0, schemeDot, schemeButton, sep1, shellLabel, sep2, ghosttyLabel, sep3, versionPill])
+        rightStack.setCustomSpacing(10, after: broadcastPill)
         rightStack.setCustomSpacing(10, after: cliPill)
         rightStack.setCustomSpacing(10, after: editorPill)
         rightStack.setCustomSpacing(8, after: sep3)
@@ -376,11 +398,13 @@ final class StatusBarView: NSView {
         styleChips()
     }
 
-    /// Shows/hides the broadcast warning chip, labeled with the active scope.
+    /// Updates the broadcast pill to reflect the active scope.
     func setBroadcasting(_ scope: BroadcastScope) {
         shownBroadcastScope = scope
-        renderBroadcastChip()
+        renderBroadcastPill()
     }
+
+    @objc private func broadcastClicked() { onBroadcastClicked?() }
 
     func updateGit(_ status: GitStatus) {
         let show = status.isRepo && !status.branch.isEmpty
@@ -456,49 +480,43 @@ final class StatusBarView: NSView {
             chip.layer?.shadowOffset = .zero
         }
 
-        renderBroadcastChip()
+        renderBroadcastPill()
     }
 
-    /// The broadcast chip: an antenna icon + scope label. Broadcast is a
-    /// "dangerous" mode — every keystroke hits N shells — so it warns with the
-    /// yellow attention token + glow rather than the accent the other chips use
-    /// (deliberate DESIGN.md rule-3 deviation). Rebuilt on scope + theme change.
-    private func renderBroadcastChip() {
-        guard shownBroadcastScope.isActive else {
-            broadcastChip.isHidden = true
-            broadcastChip.layer?.shadowOpacity = 0
-            return
-        }
+    /// The broadcast pill: antenna icon + scope (OFF / TAB / PROJECT / AGENTS /
+    /// WORKSPACE), no "BROADCAST" word. Neutral (bg2) when Off; when active it's
+    /// a yellow-glowing warning — broadcast is "dangerous" (every keystroke hits
+    /// N shells), so it uses the attention token, not the accent (DESIGN.md
+    /// rule-3 deviation). Rebuilt on scope + theme change.
+    private func renderBroadcastPill() {
+        let active = shownBroadcastScope.isActive
         let label: String
         switch shownBroadcastScope {
-        case .project:   label = " BROADCAST · PROJECT "
-        case .agents:    label = " BROADCAST · AGENTS "
-        case .workspace: label = " BROADCAST · WORKSPACE "
-        default:         label = " BROADCAST · TAB "
+        case .off:        label = "OFF"
+        case .currentTab: label = "TAB"
+        case .project:    label = "PROJECT"
+        case .agents:     label = "AGENTS"
+        case .workspace:  label = "WORKSPACE"
         }
         let theme = ZTheme.current
-        let text = NSMutableAttributedString()
-        let config = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
-            .applying(.init(paletteColors: [theme.yellowColor]))
-        if let symbol = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
-                                accessibilityDescription: "Broadcast")?
-            .withSymbolConfiguration(config) {
-            let attachment = NSTextAttachment()
-            attachment.image = symbol
-            attachment.bounds = CGRect(x: 0, y: -1, width: symbol.size.width, height: symbol.size.height)
-            text.append(NSAttributedString(attachment: attachment))
-        }
-        text.append(NSAttributedString(string: label, attributes: [
-            .font: ZTheme.monoFont(size: 10, weight: .semibold),
-            .foregroundColor: theme.yellowColor,
-        ]))
-        broadcastChip.attributedStringValue = text
-        broadcastChip.isHidden = false
-        broadcastChip.layer?.backgroundColor = theme.bg3Color.cgColor
-        broadcastChip.layer?.shadowColor = theme.yellowColor.cgColor
-        broadcastChip.layer?.shadowOpacity = 0.45
-        broadcastChip.layer?.shadowRadius = 5
-        broadcastChip.layer?.shadowOffset = .zero
+        let tint = active ? theme.yellowColor : theme.fg3Color
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+        broadcastButton.image = NSImage(systemSymbolName: "antenna.radiowaves.left.and.right",
+                                        accessibilityDescription: "Broadcast")?
+            .withSymbolConfiguration(symbolConfig)
+        broadcastButton.contentTintColor = tint
+        broadcastButton.attributedTitle = NSAttributedString(
+            string: " \(label)",
+            attributes: [
+                .font: ZTheme.monoFont(size: 10, weight: .semibold),
+                .foregroundColor: tint,
+            ])
+        broadcastButton.toolTip = "Broadcast input — click to cycle scope (⇧⌘B)"
+        broadcastPill.layer?.backgroundColor = (active ? theme.bg3Color : theme.bg2Color).cgColor
+        broadcastPill.layer?.borderColor = (active ? theme.yellowColor : theme.borderColor).cgColor
+        broadcastPill.layer?.shadowColor = theme.yellowColor.cgColor
+        broadcastPill.layer?.shadowOpacity = active ? 0.4 : 0
+        broadcastPill.layer?.shadowRadius = 5
     }
 
     private func styleAppearanceButton() {

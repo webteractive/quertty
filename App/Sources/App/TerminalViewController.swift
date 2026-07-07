@@ -676,6 +676,7 @@ final class TerminalViewController: NSViewController {
         statusBar.onSelectScheme = { [weak self] scheme in self?.onSelectScheme?(scheme) }
         statusBar.onShowEditorMenu = { [weak self] anchor in self?.showEditorMenu(from: anchor) }
         statusBar.onUpdateClicked = { [weak self] in self?.onUpdatePillClicked?() }
+        statusBar.onBroadcastClicked = { [weak self] in self?.cycleBroadcast() }
         statusBar.onCLIReinstallClicked = { [weak self] in self?.onCLIReinstallClicked?() }
         container.addSubview(statusBar)
         NSLayoutConstraint.activate([
