@@ -29,6 +29,7 @@ final class StatusBarView: NSView {
     // marks the active mode, fills stay on the bg3 surface.
     private let modeChip = NSTextField(labelWithString: "")
     private let zoomChip = NSTextField(labelWithString: " ZOOM ")
+    private let broadcastChip = NSTextField(labelWithString: " BROADCAST ")
 
     // Left: working directory, then git.
     private let cwdLabel = NSTextField(labelWithString: "")
@@ -127,7 +128,7 @@ final class StatusBarView: NSView {
             editorButton.centerYAnchor.constraint(equalTo: editorPill.centerYAnchor),
         ])
 
-        for chip in [modeChip, zoomChip] {
+        for chip in [modeChip, zoomChip, broadcastChip] {
             chip.wantsLayer = true
             chip.layer?.cornerRadius = 4
             chip.alignment = .center
@@ -135,8 +136,8 @@ final class StatusBarView: NSView {
             chip.isHidden = true
         }
 
-        configureStack(leftStack, views: [modeChip, zoomChip, cwdLabel, branchIcon, branchLabel, aheadLabel, behindLabel, changesLabel])
-        leftStack.setCustomSpacing(10, after: zoomChip)
+        configureStack(leftStack, views: [modeChip, zoomChip, broadcastChip, cwdLabel, branchIcon, branchLabel, aheadLabel, behindLabel, changesLabel])
+        leftStack.setCustomSpacing(10, after: broadcastChip)
         leftStack.setCustomSpacing(10, after: cwdLabel)
         // The cwd is the one label allowed to give way: the stack may compress
         // and the path truncates (by the head) before anything else moves.
@@ -373,6 +374,17 @@ final class StatusBarView: NSView {
         styleChips()
     }
 
+    /// Shows/hides the broadcast warning chip, labeled with the active scope.
+    func setBroadcasting(_ scope: BroadcastScope) {
+        switch scope {
+        case .off:        broadcastChip.isHidden = true
+        case .currentTab: broadcastChip.stringValue = " BROADCAST "; broadcastChip.isHidden = false
+        case .workspace:  broadcastChip.stringValue = " BROADCAST · ALL "; broadcastChip.isHidden = false
+        case .agents:     broadcastChip.stringValue = " BROADCAST · AGENTS "; broadcastChip.isHidden = false
+        }
+        styleChips()
+    }
+
     func updateGit(_ status: GitStatus) {
         let show = status.isRepo && !status.branch.isEmpty
         branchIcon.isHidden = !show
@@ -445,6 +457,21 @@ final class StatusBarView: NSView {
             chip.layer?.shadowOpacity = 0.45
             chip.layer?.shadowRadius = 5
             chip.layer?.shadowOffset = .zero
+        }
+
+        // Broadcast is a "dangerous" mode — every keystroke hits N shells — so
+        // it warns with the yellow attention token + glow rather than the
+        // accent the other chips use (deliberate DESIGN.md rule-3 deviation).
+        broadcastChip.font = ZTheme.monoFont(size: 10, weight: .semibold)
+        broadcastChip.textColor = theme.yellowColor
+        broadcastChip.layer?.backgroundColor = theme.bg3Color.cgColor
+        if broadcastChip.isHidden {
+            broadcastChip.layer?.shadowOpacity = 0
+        } else {
+            broadcastChip.layer?.shadowColor = theme.yellowColor.cgColor
+            broadcastChip.layer?.shadowOpacity = 0.45
+            broadcastChip.layer?.shadowRadius = 5
+            broadcastChip.layer?.shadowOffset = .zero
         }
     }
 
