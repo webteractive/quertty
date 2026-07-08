@@ -215,6 +215,27 @@ import Foundation
     #expect(c.name == "scratch 3")
 }
 
+@Test func removeScratchProjectsClearsAllAndFocusesFirstPinned() {
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "pin", rootPath: "/p", isPinned: true),
+        ProjectRuntime(name: "web", rootPath: "/w"),
+    ], activeIndex: 0)!
+    ws.addScratchProject()   // active = scratch
+    ws.addScratchProject()   // active = scratch 2
+    #expect(ws.projects.filter(\.isScratch).count == 2)
+    ws.removeScratchProjects()
+    #expect(ws.projects.map(\.name) == ["pin", "web"])   // both scratch gone
+    #expect(ws.activeProject.name == "pin")               // first pinned focused
+}
+
+@Test func removeScratchProjectsIsNoOpWithoutScratch() {
+    let ws = WorkspaceModel(restoring: [
+        ProjectRuntime(name: "a", rootPath: "/a"),
+    ], activeIndex: 0)!
+    ws.removeScratchProjects()
+    #expect(ws.projects.map(\.name) == ["a"])
+}
+
 @Test func renameDoesNotMoveProject() {
     let ws = WorkspaceModel(restoring: [
         ProjectRuntime(name: "zebra", rootPath: "/z"),

@@ -1064,6 +1064,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case .scratch:
             tvc.newScratchTerminal()
             return .ok
+        case .scratchClear:
+            tvc.closeAllScratchTerminals()
+            return .ok
         case .send(let target, let text, let enter, let keys):
             if let message = tvc.sendInput(target: target, text: text, enter: enter, keys: keys) {
                 return .error(message)

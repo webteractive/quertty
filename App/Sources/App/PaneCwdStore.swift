@@ -21,7 +21,16 @@ enum PaneCwdStore {
         directory.appendingPathComponent("\(surfaceID.uuidString).cwd").path
     }
 
-    /// Creates the panes directory if needed (call once at startup).
+    /// Wipes all per-pane cwd files, then recreates the directory. Called once
+    /// at startup: the files are transient (each live shell rewrites its own on
+    /// the next prompt), so this clears any orphans left by a prior quit —
+    /// including closed scratch terminals.
+    static func clearAllAndEnsureDirectory() {
+        try? FileManager.default.removeItem(at: directory)
+        ensureDirectory()
+    }
+
+    /// Creates the panes directory if needed.
     static func ensureDirectory() {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }

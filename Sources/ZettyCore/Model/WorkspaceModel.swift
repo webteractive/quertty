@@ -83,6 +83,17 @@ public final class WorkspaceModel {
         return "scratch \(n)"
     }
 
+    /// Removes every scratch terminal at once, re-pointing `activeIndex` at the
+    /// first pinned project (or the first project if none are pinned). No-op if
+    /// there are no scratch projects, or if removing them would leave none.
+    public func removeScratchProjects() {
+        guard projects.contains(where: \.isScratch) else { return }
+        let survivors = projects.filter { !$0.isScratch }
+        guard !survivors.isEmpty else { return }
+        projects = survivors
+        activeIndex = projects.firstIndex(where: \.isPinned) ?? 0
+    }
+
     public func removeProject(at index: Int) {
         guard projects.count > 1, projects.indices.contains(index) else { return }
         projects.remove(at: index)

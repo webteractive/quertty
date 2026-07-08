@@ -12,6 +12,8 @@ public enum ControlRequest: Equatable, Sendable {
     /// Open a project-less, ephemeral "scratch" terminal (plain shell, not
     /// persisted) in the Scratch sidebar section. Response `.ok`.
     case scratch
+    /// Close and clear every scratch terminal at once. Response `.ok`.
+    case scratchClear
     /// Inject input into a pane: `text` first (verbatim), then each key in
     /// `keys` (see `KeyNotation`), then a carriage return when `enter` is set.
     case send(target: PaneSelector, text: String?, enter: Bool, keys: [String])
@@ -71,6 +73,7 @@ extension ControlRequest: Codable {
         case "status": self = .status
         case "reload": self = .reload
         case "scratch": self = .scratch
+        case "scratch-clear": self = .scratchClear
         case "send":
             self = .send(
                 target: try container.decodeIfPresent(PaneSelector.self, forKey: .target) ?? .focused,
@@ -134,6 +137,8 @@ extension ControlRequest: Codable {
             try container.encode("reload", forKey: .command)
         case .scratch:
             try container.encode("scratch", forKey: .command)
+        case .scratchClear:
+            try container.encode("scratch-clear", forKey: .command)
         case .send(let target, let text, let enter, let keys):
             try container.encode("send", forKey: .command)
             try container.encode(target, forKey: .target)

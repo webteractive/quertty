@@ -1212,6 +1212,7 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "★", label: "Pin / Unpin Current Project", kbd: "") { [weak self] in self?.togglePinActiveProject() },
             PaletteCommand(glyph: "＋", label: "Add Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
             PaletteCommand(glyph: "⧉", label: "New Scratch Terminal", kbd: "⌃⌘N") { [weak self] in self?.newScratchTerminal() },
+            PaletteCommand(glyph: "⌦", label: "Close All Scratch Terminals", kbd: "") { [weak self] in self?.closeAllScratchTerminals() },
             PaletteCommand(glyph: "☾", label: "Hibernate Current Project", kbd: "") { [weak self] in
                 guard let self else { return }
                 self.hibernateProject(self.workspace.activeProject)
@@ -1954,6 +1955,26 @@ final class TerminalViewController: NSViewController {
         refreshSidebar()
         onActiveProjectChanged?()
         rebuildSurfaceNodeView()   // spawns the pane
+        if let focused = focusedTerminalView() {
+            view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    /// Closes and clears every scratch terminal at once (palette / CLI), killing
+    /// their shells and returning focus to the first pinned project. No-op when
+    /// there are no scratch terminals.
+    @objc func closeAllScratchTerminals(_ sender: Any? = nil) {
+        let surfaces = workspace.projects.filter(\.isScratch)
+            .flatMap { $0.tabList.trees.flatMap { $0.layout.surfaces.map(\.id) } }
+        guard !surfaces.isEmpty else { return }
+        guard confirmClosingBusyPanes(surfaces, what: "scratch terminals") else { return }
+        workspace.removeScratchProjects()
+        onActiveProjectChanged?()
+        onSurfacesClosed?(surfaces)   // kill sessions + drop cwd files
+        refreshTabBar()
+        refreshSidebar()
+        rebuildSurfaceNodeView()
+        onWorkspaceDidChange?()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
         }
