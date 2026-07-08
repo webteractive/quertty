@@ -519,10 +519,6 @@ final class TerminalViewController: NSViewController {
             self?.presentAddProjectPanel()
         }
 
-        sidebar.onNewProject = { [weak self] in
-            self?.presentNewProjectPanel()
-        }
-
         sidebar.onRemoveProject = { [weak self] index in
             self?.confirmRemoveProject(at: index)
         }
@@ -1207,8 +1203,7 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "→", label: "Next Tab", kbd: "⌘}") { [weak self] in self?.selectNextTab(nil) },
             PaletteCommand(glyph: "←", label: "Previous Tab", kbd: "⌘{") { [weak self] in self?.selectPreviousTab(nil) },
             PaletteCommand(glyph: "★", label: "Pin / Unpin Current Project", kbd: "") { [weak self] in self?.togglePinActiveProject() },
-            PaletteCommand(glyph: "＋", label: "New Project…", kbd: "⇧⌘N") { [weak self] in self?.createProject(nil) },
-            PaletteCommand(glyph: "＋", label: "Add Existing Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
+            PaletteCommand(glyph: "＋", label: "Add Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
             PaletteCommand(glyph: "☾", label: "Hibernate Current Project", kbd: "") { [weak self] in
                 guard let self else { return }
                 self.hibernateProject(self.workspace.activeProject)
@@ -1860,7 +1855,12 @@ final class TerminalViewController: NSViewController {
 
     // MARK: - Add Project via NSOpenPanel
 
-    /// Presents an NSOpenPanel to choose a directory, then adds it as a new project.
+    private var addProjectGitCheckbox: NSButton?
+
+    /// Presents a directory picker to choose — or, via macOS's built-in New
+    /// Folder button, create — a folder, then adds it as a project. A single
+    /// "Initialize git repository" checkbox git-inits the chosen folder. This is
+    /// the one unified entry point (sidebar "+", ⌘O, ⇧⌘N, palette all land here).
     @objc func addProject(_ sender: Any?) {
         presentAddProjectPanel()
     }
@@ -1869,21 +1869,38 @@ final class TerminalViewController: NSViewController {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Add Project"
-        panel.message = "Choose a directory to add as a project"
+        panel.message = "Choose or create a folder to add as a project"
 
-        guard let window = view.window else {
-            // Fallback: run modally if no window yet.
-            if panel.runModal() == .OK, let url = panel.url {
-                addProjectFromURL(url)
-            }
-            return
+        // Accessory: a single "Initialize git repository" checkbox.
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 32))
+        let gitCheck = NSButton(checkboxWithTitle: "Initialize git repository", target: nil, action: nil)
+        gitCheck.state = .off
+        gitCheck.contentTintColor = ZTheme.current.fg2Color
+        gitCheck.translatesAutoresizingMaskIntoConstraints = false
+        accessory.addSubview(gitCheck)
+        NSLayoutConstraint.activate([
+            gitCheck.leadingAnchor.constraint(equalTo: accessory.leadingAnchor, constant: 16),
+            gitCheck.centerYAnchor.constraint(equalTo: accessory.centerYAnchor),
+        ])
+        panel.accessoryView = accessory
+        panel.isAccessoryViewDisclosed = true
+        addProjectGitCheckbox = gitCheck
+
+        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            defer { self.addProjectGitCheckbox = nil }
+            guard response == .OK, let url = panel.url else { return }
+            if gitCheck.state == .on { self.gitInitIfNeeded(atPath: url.path) }
+            self.addProjectFromURL(url)
         }
 
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            self?.addProjectFromURL(url)
+        if let window = view.window {
+            panel.beginSheetModal(for: window, completionHandler: finish)
+        } else {
+            finish(panel.runModal())
         }
     }
 
@@ -1916,103 +1933,20 @@ final class TerminalViewController: NSViewController {
         return project
     }
 
-    // MARK: - Create Project via NSOpenPanel (+ accessory)
-
-    private var newProjectNameField: NSTextField?
-    private var newProjectGitCheckbox: NSButton?
-
-    @objc func createProject(_ sender: Any?) {
-        presentNewProjectPanel()
-    }
-
-    private func presentNewProjectPanel() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "Create"
-        panel.message = "Choose where to create the new project folder"
-
-        // Accessory: a Name field + "Initialize git repository" checkbox.
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 62))
-        let label = NSTextField(labelWithString: "Name:")
-        label.font = .systemFont(ofSize: NSFont.systemFontSize)
-        label.textColor = ZTheme.current.fg2Color
-        label.translatesAutoresizingMaskIntoConstraints = false
-        let field = NSTextField()
-        field.placeholderString = "new-project"
-        field.translatesAutoresizingMaskIntoConstraints = false
-        let gitCheck = NSButton(checkboxWithTitle: "Initialize git repository", target: nil, action: nil)
-        gitCheck.state = .off
-        gitCheck.contentTintColor = ZTheme.current.fg2Color
-        gitCheck.translatesAutoresizingMaskIntoConstraints = false
-        accessory.addSubview(label)
-        accessory.addSubview(field)
-        accessory.addSubview(gitCheck)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: accessory.leadingAnchor, constant: 16),
-            label.topAnchor.constraint(equalTo: accessory.topAnchor, constant: 8),
-            field.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 8),
-            field.centerYAnchor.constraint(equalTo: label.centerYAnchor),
-            field.trailingAnchor.constraint(equalTo: accessory.trailingAnchor, constant: -16),
-            gitCheck.leadingAnchor.constraint(equalTo: field.leadingAnchor),
-            gitCheck.topAnchor.constraint(equalTo: field.bottomAnchor, constant: 8),
-        ])
-        panel.accessoryView = accessory
-        panel.isAccessoryViewDisclosed = true
-        panel.delegate = self
-        newProjectNameField = field
-        newProjectGitCheckbox = gitCheck
-
-        let finish: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard let self else { return }
-            defer {
-                self.newProjectNameField = nil
-                self.newProjectGitCheckbox = nil
-            }
-            guard response == .OK, let parent = panel.url else { return }
-            let gitInit = gitCheck.state == .on
-            // Delegate validation guarantees a valid, non-existing target here.
-            guard let target = try? NewProjectRequest(parentPath: parent.path,
-                                                      name: field.stringValue).targetPath() else { return }
-            self.performCreateProject(atPath: target, gitInit: gitInit)
-        }
-
-        if let window = view.window {
-            panel.beginSheetModal(for: window, completionHandler: finish)
-        } else {
-            finish(panel.runModal())
+    /// Runs `git init` on `path` unless it is already a git repository. A failed
+    /// init is surfaced as a non-blocking warning — the project is still added.
+    private func gitInitIfNeeded(atPath path: String) {
+        let gitDir = (path as NSString).appendingPathComponent(".git")
+        guard !FileManager.default.fileExists(atPath: gitDir) else { return }
+        if let message = runGitInit(atPath: path) {
+            presentGitInitWarning("The project was added, but git init failed:\n\(message)")
         }
     }
 
-    private func performCreateProject(atPath target: String, gitInit: Bool) {
-        switch createProjectDirectory(atPath: target, gitInit: gitInit) {
-        case .failure(let error):
-            presentCreateProjectError(error.localizedDescription)
-        case .success(let outcome):
-            addProjectFromURL(URL(fileURLWithPath: target))
-            if case .failed(let message) = outcome {
-                presentCreateProjectWarning(
-                    "The project was created, but git init failed:\n\(message)")
-            }
-        }
-    }
-
-    private func presentCreateProjectError(_ text: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Couldn’t create the project"
-        alert.informativeText = text
-        alert.addButton(withTitle: "OK")
-        if let window = view.window { alert.beginSheetModal(for: window, completionHandler: nil) }
-        else { alert.runModal() }
-    }
-
-    private func presentCreateProjectWarning(_ text: String) {
+    private func presentGitInitWarning(_ text: String) {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Project created"
+        alert.messageText = "Project added"
         alert.informativeText = text
         alert.addButton(withTitle: "OK")
         if let window = view.window { alert.beginSheetModal(for: window, completionHandler: nil) }
@@ -2503,26 +2437,5 @@ extension TerminalViewController: NSMenuItemValidation {
             return workspace.activeTabList.activeTree.layout.surfaces.count > 1
         }
         return true
-    }
-}
-
-// MARK: - NSOpenSavePanelDelegate (Create Project name validation)
-
-extension TerminalViewController: NSOpenSavePanelDelegate {
-    public func panel(_ sender: Any, validate url: URL) throws {
-        guard let field = newProjectNameField else { return }
-        let request = NewProjectRequest(parentPath: url.path, name: field.stringValue)
-        do {
-            let target = try request.targetPath()
-            if FileManager.default.fileExists(atPath: target) {
-                throw NSError(domain: "Zetty", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey: "A folder named “\(request.name)” already exists here.",
-                ])
-            }
-        } catch let error as NewProjectRequest.ValidationError {
-            throw NSError(domain: "Zetty", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: error.errorDescription ?? "Invalid name.",
-            ])
-        }
     }
 }

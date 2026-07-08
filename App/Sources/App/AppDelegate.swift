@@ -1441,23 +1441,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let projectMenu = NSMenu(title: "Project")
         projectMenuItem.submenu = projectMenu
 
-        // "New Project…"  ⇧⌘N — create a new folder and add it
-        let newProject = NSMenuItem(
-            title: "New Project\u{2026}",
-            action: #selector(TerminalViewController.createProject(_:)),
-            keyEquivalent: "n"
-        )
-        newProject.keyEquivalentModifierMask = [.command, .shift]
-        projectMenu.addItem(newProject)
-
-        // "Add Existing Project…"  ⌘O — pick an existing directory
+        // "Add Project…"  ⌘O — the unified picker (choose or create a folder,
+        // with an "Initialize git repository" checkbox).
         let addProject = NSMenuItem(
-            title: "Add Existing Project\u{2026}",
+            title: "Add Project\u{2026}",
             action: #selector(TerminalViewController.addProject(_:)),
             keyEquivalent: "o"
         )
         addProject.keyEquivalentModifierMask = [.command]
         projectMenu.addItem(addProject)
+
+        // Hidden alternate so the old New-Project ⇧⌘N muscle memory still opens
+        // the same picker (a hidden item still fires its key equivalent).
+        let addProjectAlt = NSMenuItem(
+            title: "Add Project\u{2026}",
+            action: #selector(TerminalViewController.addProject(_:)),
+            keyEquivalent: "n"
+        )
+        addProjectAlt.keyEquivalentModifierMask = [.command, .shift]
+        addProjectAlt.isHidden = true
+        projectMenu.addItem(addProjectAlt)
 
         // "Project Settings…"  ⌥⌘, — the ACTIVE project's settings sheet
         // (comma mirrors the app-wide Settings ⌘, convention).
