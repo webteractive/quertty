@@ -30,7 +30,9 @@ mise exec -- tuist generate --no-open
 xcodebuild -project zetty.xcodeproj -scheme zetty -destination 'platform=macOS' build
 ```
 
-Tests: `mise exec -- tuist test` (or the `ZettyGhosttyTests` / `Testing` schemes).
+Tests: `mise exec -- tuist test` runs the app test target. The pure `ZettyCore`
+suite is faster via SwiftPM — `mise exec -- swift test` — and a single test with
+`--filter`, e.g. `mise exec -- swift test --filter moveProjectRejectsCrossGroupMove`.
 
 ## Design rules  ← read before any UI work
 
