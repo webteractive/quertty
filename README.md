@@ -373,21 +373,28 @@ zetty status --json                      # projects → tabs → panes, agent st
 zetty send --cwd ~/work/api 'ls' --enter # type into a pane
 zetty send --key C-c                     # send a control key
 zetty capture --lines 100                # recent pane output (preserved sessions)
-zetty new-tab --project api              # prints the new pane id
-zetty split --pane 1a2b3c4d --horizontal
-zetty break --pane 1a2b3c4d              # move a pane into its own tab
+zetty new-tab --project api              # background tab; prints the new pane id
+zetty split --pane 1a2b3c4d --horizontal # background split; prints the new pane id
+zetty split --pane 1a2b3c4d --focus      # ...or bring the new pane to front
+zetty break --pane 1a2b3c4d              # move a pane into its own (background) tab
 zetty add-project ~/work/api             # add an existing directory as a project
 zetty new-project ~/work/new --git       # create a folder + add it (optional git init)
 zetty remove-project api                 # close a project's tabs (no confirmation)
 zetty hibernate api                      # free a project's sessions/processes (keeps layout)
 zetty wake api                           # wake a hibernated project (fresh shells)
-zetty scratch                            # open a project-less, ephemeral terminal
+zetty scratch                            # background scratch terminal; prints its pane id
 zetty scratch-clear                      # close and clear all scratch terminals
 zetty focus --cwd ~/work/api
 zetty close --pane 1a2b3c4d --tab
 zetty reload                             # same as ⇧⌘,
 zetty quit --kill-sessions               # full shutdown, ends preserved sessions
 ```
+
+`new-tab`, `split`, `break`, and `scratch` never change the active project or
+keyboard focus by default — an agent can reshape your workspace while you keep
+typing. Pass `--focus` to switch to the result. A background pane's shell spawns
+when you first view it, so `zetty send` to a brand-new background pane fails
+until it is viewed or created with `--focus`.
 
 Run `zetty --help` for the full grammar. This makes Zetty scriptable by
 anything — including the AI agents running inside it.

@@ -255,8 +255,12 @@ Commands (see `zetty --help` for full grammar and agent notes):
   inject text/keys into a pane's pty (tmux-style key names incl. C-a…C-z).
 - `capture [--pane|--cwd] [--lines <n>]` — a pane's recent output via its
   preserved zmx session (`zmx history`).
-- `new-tab [--project <name>]` / `split [--pane|--cwd] [--horizontal]` —
-  both print the new pane's bare id for command substitution.
+- `new-tab [--project <name>] [--focus]` / `split [--pane|--cwd]
+  [--horizontal] [--focus]` / `break [--pane|--cwd] [--focus]` — create a
+  tab / split a pane / break a pane into a new adjacent tab, in the
+  BACKGROUND by default (active project + keyboard focus stay put, so an
+  agent can reshape the workspace mid-type); `--focus` switches to the
+  result. All print the new pane's bare id for command substitution.
 - `add-project <path> [--name <name>]` — add a directory as a project
   (name defaults to the directory name) and make it active; the CLI
   resolves relative paths against its own cwd, and the path must be an
@@ -265,9 +269,10 @@ Commands (see `zetty --help` for full grammar and agent notes):
 - `remove-project <name>` — remove a project (case-insensitive), closing
   its tabs/panes and ending their zmx sessions; no confirmation dialog,
   and the last remaining project can't be removed.
-- `scratch` — open a project-less, ephemeral scratch terminal (rooted at
-  home, plain shell, never persisted) in the Scratch section.
-  `scratch-clear` closes and clears every scratch terminal at once.
+- `scratch [--focus]` — open a project-less, ephemeral scratch terminal
+  (rooted at home, plain shell, never persisted) in the Scratch section, in
+  the BACKGROUND by default; `--focus` switches to it. Prints the new pane
+  id. `scratch-clear` closes and clears every scratch terminal at once.
 - `focus (--pane|--cwd)` · `close (--pane|--cwd) [--tab]` · `reload` ·
   `quit [--kill-sessions]` (no dialog; the flag kills every preserved
   session first — full shutdown).
