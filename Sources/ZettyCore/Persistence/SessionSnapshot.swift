@@ -76,6 +76,7 @@ public enum SessionSnapshot {
                 isPinned: runtime.isPinned,
                 sortOrder: savedIndex,
                 isHibernated: runtime.isHibernated,
+                isHome: runtime.isHome,
                 sessions: [Session(title: "main", tabs: tabs, activeTabIndex: runtime.tabList.activeIndex)]
             )
         }
@@ -110,6 +111,7 @@ public enum SessionSnapshot {
                 rootPath: project.rootPath,
                 isPinned: project.isPinned,
                 isHibernated: project.isHibernated,
+                isHome: project.isHome,
                 tabList: tabList
             )
         }

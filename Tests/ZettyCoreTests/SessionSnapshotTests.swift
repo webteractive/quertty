@@ -190,3 +190,14 @@ private func tempDir() throws -> URL {
     let p = try JSONDecoder().decode(Project.self, from: Data(json.utf8))
     #expect(p.isHibernated == false)
 }
+
+@Test func isHomeRoundTripsThroughSnapshot() {
+    let ws = WorkspaceModel()                       // seeds Home
+    _ = ws.addProject(name: "api", rootPath: "/a")
+    let saved = SessionSnapshot.workspace(from: ws)
+    #expect(saved.projects.contains { $0.isHome })
+
+    let restored = SessionSnapshot.projectRuntimes(from: saved)
+    #expect(restored.filter(\.isHome).count == 1)
+    #expect(restored.first(where: \.isHome)?.name == "Home")
+}
