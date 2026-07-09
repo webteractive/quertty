@@ -331,3 +331,8 @@ id libghostty doesn't expose).
   part of the same change. A feature isn't done until the README covers it.
 - **Keep `CLAUDE.md` and `AGENTS.md` byte-identical.** They share one canonical
   content; any edit to one must be replicated to the other in the same commit.
+- **Every release ships human-written notes.** When cutting a release, add a
+  note to the GitHub release body summarizing the updates and new features it
+  introduces — a short, user-facing "What's new" list, not just the
+  auto-generated "Full Changelog" link. Group by feature/fix and phrase it for
+  users, mirroring the same changes documented in `README.md`.
