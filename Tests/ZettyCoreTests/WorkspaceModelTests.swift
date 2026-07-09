@@ -248,3 +248,57 @@ import Foundation
     // Out-of-range index is a no-op.
     ws.rename(projectAt: 99, to: "nope")
 }
+
+// MARK: - Home project
+
+@Test func defaultInitSeedsHome() {
+    let ws = WorkspaceModel()
+    #expect(ws.projects.count == 1)
+    #expect(ws.projects[0].isHome)
+    #expect(ws.projects[0].name == "Home")
+}
+
+@Test func restoredInjectsHomeWhenAbsent() {
+    // Existing users: persisted projects have no isHome → Home is prepended,
+    // and the saved active index is remapped past it.
+    let ws = WorkspaceModel.restored(from: [
+        ProjectRuntime(name: "Homedir", rootPath: "/Users/x"),
+        ProjectRuntime(name: "api", rootPath: "/Users/x/api"),
+    ], activeIndex: 1)!
+    #expect(ws.projects.first!.isHome)
+    #expect(ws.projects.count == 3)
+    #expect(ws.activeProject.name == "api")
+}
+
+@Test func restoredKeepsExistingHome() {
+    let ws = WorkspaceModel.restored(from: [
+        ProjectRuntime(name: "Home", rootPath: "/Users/x", isHome: true),
+        ProjectRuntime(name: "api", rootPath: "/Users/x/api"),
+    ], activeIndex: 0)!
+    #expect(ws.projects.filter(\.isHome).count == 1)   // no duplicate injected
+    #expect(ws.projects.count == 2)
+}
+
+@Test func removeProjectRejectsHome() {
+    let ws = WorkspaceModel()                     // just Home
+    _ = ws.addProject(name: "api", rootPath: "/a")
+    let homeIndex = ws.projects.firstIndex(where: \.isHome)!
+    ws.removeProject(at: homeIndex)
+    #expect(ws.projects.contains { $0.isHome })   // still there
+}
+
+@Test func removeProjectAllowsLastNonHome() {
+    let ws = WorkspaceModel()                     // Home
+    _ = ws.addProject(name: "api", rootPath: "/a")
+    let apiIndex = ws.projects.firstIndex { $0.name == "api" }!
+    ws.removeProject(at: apiIndex)                // removing the only non-home project
+    #expect(ws.projects.count == 1)
+    #expect(ws.projects[0].isHome)
+}
+
+@Test func homeSortsFirst() {
+    let ws = WorkspaceModel()
+    let pinned = ws.addProject(name: "pinned", rootPath: "/p")
+    ws.togglePin(at: ws.projects.firstIndex { $0.id == pinned.id }!)
+    #expect(ws.projects[0].isHome)                // Home ahead of pinned
+}

@@ -138,3 +138,18 @@ import Foundation
     #expect(decoded.autoHibernate == false)
     #expect(ProjectSettings().autoHibernate == nil)
 }
+
+@Test func homeSettingsKeyIsSentinelNotPath() {
+    let home = ProjectRuntime(name: "Home", rootPath: NSHomeDirectory(), isHome: true)
+    #expect(home.settingsKey == ProjectSettingsStore.homeKey)
+
+    // A normal project at ~ keys by its path, so it never collides with Home.
+    let tildeProject = ProjectRuntime(name: "dotfiles", rootPath: NSHomeDirectory())
+    #expect(tildeProject.settingsKey != ProjectSettingsStore.homeKey)
+
+    var file = ProjectSettingsFile()
+    var s = ProjectSettings(); s.name = "My Home"
+    file.set(s, for: home.settingsKey)
+    #expect(file.settings(for: home.settingsKey)?.name == "My Home")
+    #expect(file.settings(for: tildeProject.settingsKey) == nil)   // no collision
+}

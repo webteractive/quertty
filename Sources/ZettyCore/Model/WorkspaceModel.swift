@@ -12,19 +12,29 @@ public final class ProjectRuntime {
     /// the Scratch sidebar section, never persisted, and its panes never use
     /// zmx. Not pinnable or hibernatable.
     public let isScratch: Bool
+    /// The permanent, non-removable Home project: seeded by default, lives in
+    /// its own top sidebar section, can be hibernated but never removed.
+    public let isHome: Bool
     public let tabList: TabList
 
     public init(id: UUID = UUID(), name: String, rootPath: String,
                 isPinned: Bool = false, isHibernated: Bool = false,
-                isScratch: Bool = false, tabList: TabList? = nil) {
+                isScratch: Bool = false, isHome: Bool = false, tabList: TabList? = nil) {
         self.id = id
         self.name = name
         self.rootPath = rootPath
         self.isPinned = isPinned
         self.isHibernated = isHibernated
         self.isScratch = isScratch
+        self.isHome = isHome
         // Default the project's tab list to open terminals in the project root.
         self.tabList = tabList ?? TabList(defaultWorkingDir: rootPath)
+    }
+
+    /// The key under which this project's settings are stored. Home uses a
+    /// reserved sentinel so it never shares an entry with a user `~` project.
+    public var settingsKey: String {
+        isHome ? ProjectSettingsStore.homeKey : rootPath
     }
 }
 
@@ -35,8 +45,7 @@ public final class WorkspaceModel {
     public private(set) var activeIndex: Int
 
     public init() {
-        let home = NSHomeDirectory()
-        projects = [ProjectRuntime(name: (home as NSString).lastPathComponent, rootPath: home)]
+        projects = [WorkspaceModel.makeHome()]
         activeIndex = 0
     }
 
@@ -45,6 +54,26 @@ public final class WorkspaceModel {
         projects = restored
         self.activeIndex = min(max(activeIndex, 0), restored.count - 1)
         regroup()
+    }
+
+    /// The default Home project (rooted at the user's home directory).
+    public static func makeHome() -> ProjectRuntime {
+        ProjectRuntime(name: "Home", rootPath: NSHomeDirectory(), isHome: true)
+    }
+
+    /// Builds a restored workspace, guaranteeing a Home project exists. When the
+    /// persisted list has none (existing users saved before Home), a fresh Home
+    /// is prepended and `activeIndex` is remapped past it; their old home-rooted
+    /// project stays as an ordinary, now-removable project. Never returns nil for
+    /// a non-empty input.
+    public static func restored(from persisted: [ProjectRuntime], activeIndex: Int = 0) -> WorkspaceModel? {
+        var list = persisted
+        var active = activeIndex
+        if !list.contains(where: \.isHome) {
+            list.insert(makeHome(), at: 0)
+            active += 1
+        }
+        return WorkspaceModel(restoring: list, activeIndex: active)
     }
 
     public var activeProject: ProjectRuntime { projects[activeIndex] }
@@ -96,7 +125,9 @@ public final class WorkspaceModel {
     }
 
     public func removeProject(at index: Int) {
-        guard projects.count > 1, projects.indices.contains(index) else { return }
+        // Home is never removable; it guarantees the workspace is never empty,
+        // so any other project — even the last non-home one — can be removed.
+        guard projects.indices.contains(index), !projects[index].isHome else { return }
         projects.remove(at: index)
         if activeIndex >= projects.count {
             activeIndex = projects.count - 1
@@ -154,7 +185,9 @@ public final class WorkspaceModel {
     private func regroup() {
         guard !projects.isEmpty else { return }
         let activeID = projects[activeIndex].id
-        projects = projects.filter(\.isPinned) + projects.filter { !$0.isPinned }
+        projects = projects.filter(\.isHome)
+            + projects.filter { !$0.isHome && $0.isPinned }
+            + projects.filter { !$0.isHome && !$0.isPinned }
         activeIndex = projects.firstIndex { $0.id == activeID } ?? 0
     }
 }

@@ -11,9 +11,15 @@ public struct ProjectSettingsStore {
         self.fileURL = directory.appendingPathComponent("project-settings.json")
     }
 
+    /// Reserved settings key for the Home project — not a real path, so it never
+    /// collides with a user-added `~` project.
+    public static let homeKey = "@home"
+
     /// Normalizes a project rootPath into the dictionary key: tilde expanded,
-    /// `.`/`..` and symlink-free standardized form, no trailing slash.
+    /// `.`/`..` and symlink-free standardized form, no trailing slash. The Home
+    /// sentinel passes through unchanged.
     public static func canonicalKey(_ rootPath: String) -> String {
+        if rootPath == homeKey { return homeKey }
         var path = (rootPath as NSString).expandingTildeInPath
         path = (path as NSString).standardizingPath
         path = URL(fileURLWithPath: path).standardizedFileURL
