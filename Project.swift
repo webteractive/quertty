@@ -41,6 +41,16 @@ let project = Project(
                 // an update while the old copy still runs) activates the existing
                 // window instead of spawning a second "double" window.
                 "LSMultipleInstancesProhibited": true,
+                // Register Zetty as a handler for ssh:// URLs so a handover from
+                // another app (Terminal, a browser, `open ssh://…`) opens an ssh
+                // session in a new Home tab (see AppDelegate.application(_:open:)).
+                "CFBundleURLTypes": [
+                    [
+                        "CFBundleURLName": "co.webteractive.zetty.ssh",
+                        "CFBundleTypeRole": "Viewer",
+                        "CFBundleURLSchemes": ["ssh"],
+                    ],
+                ],
                 // Brand: the app/binary/CLI are "zetty"; internal module names
                 // (ZettyCore/ZettyGhostty) are renamed in the repo layer.
                 "CFBundleName": "Zetty",

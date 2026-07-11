@@ -74,6 +74,9 @@ by the tool it's running.
   opt out with `check-updates = false`.
 - **Tab identity** — a foreground-process probe names each tab after what it's
   actually running, with bundled logos for 40+ CLI tools.
+- **`ssh://` links** — Zetty registers as a macOS handler for `ssh://` URLs, so
+  a handover from another app (Terminal, a browser link, `open ssh://host`)
+  opens the session in a new Home tab.
 - **Control CLI** — a `zetty` command scripts the app over a local socket:
   inspect layout, send keys, capture output, open tabs/splits, focus panes.
 - **Themes** — 20 built-in color schemes (10 dark, 10 light), independent
@@ -321,6 +324,18 @@ Once enabled, every pane runs inside its own zmx session:
 
 The Settings-offered download installs zmx into `~/.zetty/bin`; existing
 Homebrew or manual installs are detected automatically.
+
+### `ssh://` links
+
+Zetty registers as a macOS handler for `ssh://` URLs. When another app opens
+`ssh://[user@]host[:port]` — Terminal, a browser link, or `open ssh://host`
+from a shell — Zetty comes to the front and opens a new **Home** tab running
+`ssh host` (with `-p <port>` when the URL carries one). URLs are validated
+strictly, so a crafted link can't inject shell commands; anything that isn't a
+clean `ssh://` target is ignored.
+
+To make Zetty the default `ssh://` handler, set it in the app that opens the
+links (or via a URL-handler utility) — macOS picks the default, not Zetty.
 
 ### AI agent status
 

@@ -31,6 +31,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// at save time and the workspace would never persist).
     private var terminalViewController: TerminalViewController?
 
+    // MARK: - ssh:// URL handover
+    //
+    // Another app opens ssh://user@host; macOS delivers it here (Zetty is
+    // registered for the scheme in Project.swift). URLs that arrive before the
+    // workspace is restored on cold launch wait in `pendingSSHURLs`.
+    private var pendingSSHURLs: [URL] = []
+    private var workspaceReady = false
+
     private lazy var updateChecker = UpdateChecker(
         currentVersion: (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "")
     private let updateInstaller = UpdateInstaller()
@@ -258,6 +266,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         startUpdateChecks()
         refreshCLIStatus()
         tvc.startHibernationTimer()
+
+        // The workspace is fully restored and the window is up — any ssh:// URL
+        // that cold-launched us (queued in application(_:open:)) can now open.
+        workspaceReady = true
+        drainPendingSSHURLs()
     }
 
     /// Reflects the CLI symlink's staleness in the status bar (pill when it
@@ -270,6 +283,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Re-check on focus so moving/replacing the app (which staleifies the
         // symlink) is reflected without a relaunch.
         refreshCLIStatus()
+    }
+
+    // MARK: - ssh:// URL handover
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme?.lowercased() == "ssh" {
+            if workspaceReady {
+                handleSSHURL(url)
+            } else {
+                pendingSSHURLs.append(url)
+            }
+        }
+    }
+
+    /// Validates one ssh:// URL and, if safe, opens it in a Home tab and brings
+    /// Zetty to the front. Invalid/unsafe URLs are ignored (with a beep).
+    private func handleSSHURL(_ url: URL) {
+        guard let command = SSHURLHandler.command(for: url) else {
+            NSSound.beep()
+            return
+        }
+        terminalViewController?.openSSHSession(command: command)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Drains ssh:// URLs that arrived before the workspace was ready.
+    private func drainPendingSSHURLs() {
+        let urls = pendingSSHURLs
+        pendingSSHURLs.removeAll()
+        urls.forEach(handleSSHURL)
     }
 
     // MARK: - Update checks

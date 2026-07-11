@@ -196,6 +196,21 @@ v2/v3 additions (same design doc):
   New panes only — a preserved zmx session captures env at first creation.
   Sheet editor: KEY=VALUE lines.
 
+### `ssh://` URL handover
+
+Zetty is a registered macOS `ssh://` handler (`CFBundleURLTypes` in
+`Project.swift`). A handover URL from another app arrives at
+`AppDelegate.application(_:open:)`, which validates it via the pure
+`SSHURLHandler` (`ZettyCore` — strict charset; untrusted external input, so the
+`ssh` command is built from validated tokens only, never a shell-interpolated
+raw string) and opens a focused new **Home** tab running the command through
+`TerminalViewController.openSSHSession(command:)` (existing
+`pendingStartupCommands` → `sendText` path). URLs that arrive before the
+workspace is ready on cold launch are queued and drained at the end of
+`applicationDidFinishLaunching`. Clicking `ssh://` links *inside* Zetty's own
+terminals is NOT handled (that needs the unwired
+`TerminalSurfaceOpenURLDelegate`).
+
 ## tmux-style prefix keys + copy mode
 
 `Ctrl+B` (configurable) arms a one-shot prefix; the next key drives Zetty:

@@ -1353,6 +1353,35 @@ final class TerminalViewController: NSViewController {
         return .success(SessionPersistence.shortID(for: newPaneID))
     }
 
+    /// Opens a new **Home** tab running `command` as a one-shot startup command
+    /// (used by the ssh:// URL handover). Wakes Home first if it is hibernated,
+    /// switches to it if it is not active, and focuses the new tab. The command
+    /// is injected via the usual `pendingStartupCommands` path once the pane
+    /// spawns, so it works whether or not Home preserves sessions.
+    func openSSHSession(command: String) {
+        guard let homeIndex = workspace.projects.firstIndex(where: { $0.isHome }) else { return }
+        let home = workspace.projects[homeIndex]
+
+        let tabList = home.tabList
+        let newPaneID = tabList.newBackgroundTab()
+        tabList.select(index: tabList.trees.count - 1)
+        pendingStartupCommands[newPaneID] = command
+
+        if home.isHibernated {
+            wakeProject(home)                     // selects + rebuilds → new pane spawns
+        } else if homeIndex != workspace.activeIndex {
+            selectProject(at: homeIndex)          // selects + rebuilds
+        } else {
+            refreshTabBar()
+            rebuildSurfaceNodeView()
+            refreshSidebar()
+            if let focused = focusedTerminalView() {
+                view.window?.makeFirstResponder(focused)
+            }
+        }
+        onWorkspaceDidChange?()
+    }
+
     /// Adds the directory at `path` as a new project (CLI `add-project`),
     /// makes it active so its first pane spawns, and returns that pane's
     /// short id — or an error message.
