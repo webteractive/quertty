@@ -7,7 +7,11 @@ let libghosttyPackage: Package = .remote(
 )
 
 // Stamps the built app's Info.plist with the short git commit ("*" suffix when
-// the working tree is dirty) so the status bar can show which build is running.
+// the working tree is dirty) so the status bar can show which build is running,
+// and with a monotonic CFBundleVersion (git commit count): Launch Services picks
+// the HIGHEST CFBundleVersion among registered copies when routing ssh:// opens,
+// so without this every build ties at the default "1.0" and a stale
+// DerivedData/build stray can win over /Applications.
 // The processed Info.plist is declared as a script input so the build system
 // orders the stamp AFTER ProcessInfoPlistFile — without it the script can run
 // first and plist processing then wipes the stamp.
@@ -17,6 +21,9 @@ COMMIT=$(git -C "${SRCROOT}" rev-parse --short HEAD 2>/dev/null || echo unknown)
 if [ -n "$(git -C "${SRCROOT}" status --porcelain 2>/dev/null)" ]; then COMMIT="${COMMIT}*"; fi
 /usr/libexec/PlistBuddy -c "Set :ZettyBuildCommit ${COMMIT}" "${PLIST}" 2>/dev/null \\
   || /usr/libexec/PlistBuddy -c "Add :ZettyBuildCommit string ${COMMIT}" "${PLIST}"
+BUILDNUM=$(git -C "${SRCROOT}" rev-list --count HEAD 2>/dev/null || echo 1)
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILDNUM}" "${PLIST}" 2>/dev/null \\
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string ${BUILDNUM}" "${PLIST}"
 """
 
 let project = Project(

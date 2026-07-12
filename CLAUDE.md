@@ -211,6 +211,15 @@ workspace is ready on cold launch are queued and drained at the end of
 terminals is NOT handled (that needs the unwired
 `TerminalSurfaceOpenURLDelegate`).
 
+**Stale-copy gotcha:** every `xcodebuild` auto-registers its product with
+Launch Services (`lsregister -f -R -trusted`), so dev builds in
+`build/`/DerivedData compete with `/Applications/zetty.app` for scheme and
+bundle-id resolution. The post-build stamp script writes a monotonic
+`CFBundleVersion` (git commit count) so LS ranks the newest build highest —
+old strays lose instead of tying at the default `1.0`. Keep `/Applications`
+current (the usual rebuild-and-install step) and delete/`lsregister -u` stray
+`.app` products if an external open lands in the wrong copy.
+
 ## tmux-style prefix keys + copy mode
 
 `Ctrl+B` (configurable) arms a one-shot prefix; the next key drives Zetty:
