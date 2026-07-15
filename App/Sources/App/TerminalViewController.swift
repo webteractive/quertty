@@ -1405,6 +1405,88 @@ final class TerminalViewController: NSViewController {
         return .success(SessionPersistence.shortID(for: surface.id))
     }
 
+    // MARK: - Clone Project (copy-on-write fork)
+
+    /// Plans a clone of the named project (nil → the active project). Main
+    /// thread — reads workspace state and does FS existence checks only; the
+    /// copy itself runs in `CloneRunner` off-main.
+    func planClone(projectName: String?, cloneName: String?) -> Result<ClonePlan, ControlError> {
+        let source: ProjectRuntime
+        if let projectName {
+            let matches = workspace.projects.filter {
+                $0.name.lowercased() == projectName.lowercased()
+            }
+            guard let match = matches.first else {
+                return .failure(.protocolError("no project named \"\(projectName)\""))
+            }
+            guard matches.count == 1 else {
+                return .failure(.protocolError("\(matches.count) projects named \"\(projectName)\""))
+            }
+            source = match
+        } else {
+            source = workspace.activeProject
+        }
+        guard !source.isScratch else {
+            return .failure(.protocolError("scratch terminals can't be cloned"))
+        }
+        guard !source.isHome else {
+            return .failure(.protocolError("Home can't be cloned"))
+        }
+        guard source.cloneSource == nil else {
+            return .failure(.protocolError("\"\(source.name)\" is already a clone — clone the original instead"))
+        }
+        // Bare clone names already taken for this source ("src/fork-1" → "fork-1").
+        let taken = Set(workspace.clones(of: source).map {
+            String($0.name.dropFirst(source.name.count + 1))
+        })
+        switch CloneSupport.plan(sourceName: source.name, sourceRootPath: source.rootPath,
+                                 cloneName: cloneName, takenCloneNames: taken,
+                                 home: NSHomeDirectory()) {
+        case .failure(let error):
+            return .failure(.protocolError(error.localizedDescription))
+        case .success(let plan):
+            guard !FileManager.default.fileExists(atPath: plan.targetPath) else {
+                return .failure(.protocolError("a directory already exists at \(plan.targetPath)"))
+            }
+            return .success(plan)
+        }
+    }
+
+    /// Registers a finished clone copy as a workspace project (main thread) and
+    /// returns its first pane's short id. Background by default; `focus`
+    /// switches to it and spawns its pane. Layout templates and startup commands
+    /// deliberately do NOT apply — the clone carries the source's real files.
+    func registerClone(plan: ClonePlan, outcome: CloneRunner.Outcome, focus: Bool) -> Result<String, ControlError> {
+        let project = workspace.addCloneProject(
+            name: plan.projectName, rootPath: plan.targetPath,
+            cloneSource: plan.sourceRootPath, makeActive: focus)
+        refreshTabBar()
+        refreshSidebar()
+        if focus {
+            onActiveProjectChanged?()
+            rebuildSurfaceNodeView()   // spawns the pane + autosaves
+            if let focused = focusedTerminalView() {
+                view.window?.makeFirstResponder(focused)
+            }
+        } else {
+            onWorkspaceDidChange?()     // persist the added clone
+        }
+        if let branchError = outcome.branchError {
+            presentGitInitWarning(
+                "The clone was created, but branch setup (git switch -c \(plan.branchName)) failed:\n\(branchError)")
+        } else if !outcome.usedCoW {
+            // Spec: the fallback is labeled honestly — the user should know this
+            // was a full byte copy (slow, real disk), not an instant CoW clone.
+            presentGitInitWarning(
+                "The volume doesn't support copy-on-write, so the clone is a full copy.")
+        }
+        guard let surface = project.tabList.activeTree.focusedSurface
+                ?? project.tabList.activeTree.layout.surfaces.first else {
+            return .failure(.noSuchPane("clone added but no pane found"))
+        }
+        return .success(SessionPersistence.shortID(for: surface.id))
+    }
+
     // MARK: - Create Project (new folder on disk)
 
     enum GitInitOutcome: Equatable {

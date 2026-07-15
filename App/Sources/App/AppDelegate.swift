@@ -721,8 +721,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The fallback name is the folder name, NOT the runtime name — the
     /// runtime name may already carry the override.
     func resolvedSettings(for project: ProjectRuntime) -> ResolvedProjectSettings {
-        ProjectSettingsResolver.resolve(
-            projectSettings.settings(for: project.settingsKey),
+        // A clone without its own settings inherits its source project's
+        // (env, theme, preserve-sessions); its own file, once created, wins
+        // wholesale. The source's `name` is deliberately dropped — otherwise
+        // an inherited settings file would rename the clone to match the
+        // source (see `updateProjectSettings`'s rename-apply call site).
+        let own = projectSettings.settings(for: project.settingsKey)
+        let inherited = own == nil
+            ? project.cloneSource.flatMap { source in
+                projectSettings.settings(for: source).map { var s = $0; s.name = nil; return s }
+            } : nil
+        return ProjectSettingsResolver.resolve(
+            own ?? inherited,
             fallbackName: project.isHome ? "Home" : (project.rootPath as NSString).lastPathComponent,
             global: appConfig)
     }
@@ -1085,6 +1095,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     DispatchQueue.main.async { NSApp.terminate(nil) }
                 }
                 return .ok
+            case .cloneProject(let project, let name, let focus):
+                // Plan on main (workspace state), copy on this socket queue (cp can be
+                // slow on a non-APFS fallback), register on main.
+                let planned = DispatchQueue.main.sync { () -> Result<ClonePlan, ControlError> in
+                    guard let tvc = self.terminalViewController else {
+                        return .failure(.protocolError("Zetty is still starting up"))
+                    }
+                    return tvc.planClone(projectName: project, cloneName: name)
+                }
+                switch planned {
+                case .failure(let error):
+                    return .error(error.localizedDescription)
+                case .success(let plan):
+                    switch CloneRunner.clone(plan) {
+                    case .failure(let failure):
+                        return .error(failure.message)
+                    case .success(let outcome):
+                        return DispatchQueue.main.sync {
+                            guard let tvc = self.terminalViewController else {
+                                return .error("Zetty is shutting down")
+                            }
+                            switch tvc.registerClone(plan: plan, outcome: outcome, focus: focus) {
+                            case .success(let pane): return .pane(pane)
+                            case .failure(let error): return .error(error.localizedDescription)
+                            }
+                        }
+                    }
+                }
             default:
                 return DispatchQueue.main.sync { self.handleOnMain(request) }
             }
