@@ -723,13 +723,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func resolvedSettings(for project: ProjectRuntime) -> ResolvedProjectSettings {
         // A clone without its own settings inherits its source project's
         // (env, theme, preserve-sessions); its own file, once created, wins
-        // wholesale. The source's `name` is deliberately dropped — otherwise
-        // an inherited settings file would rename the clone to match the
-        // source (see `updateProjectSettings`'s rename-apply call site).
+        // wholesale. The source's `name` and `icon` are deliberately dropped —
+        // an inherited name would rename the clone to match the source (see
+        // `updateProjectSettings`'s rename-apply call site), and an inherited
+        // icon would suppress the fork glyph that marks the row as a clone.
         let own = projectSettings.settings(for: project.settingsKey)
         let inherited = own == nil
             ? project.cloneSource.flatMap { source in
-                projectSettings.settings(for: source).map { var s = $0; s.name = nil; return s }
+                projectSettings.settings(for: source).map {
+                    var s = $0; s.name = nil; s.icon = nil; return s
+                }
             } : nil
         return ProjectSettingsResolver.resolve(
             own ?? inherited,

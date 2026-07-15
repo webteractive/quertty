@@ -229,8 +229,9 @@ root itself, no `..` traversal.
 Settings inherit until the clone gets its own:
 `AppDelegate.resolvedSettings(for:)` uses the clone's own settings file
 wholesale if one exists; otherwise it falls back to the source project's
-settings with `name` cleared (so an inherited file doesn't rename the clone
-to match its source).
+settings with `name` and `icon` cleared (an inherited name would rename the
+clone to match its source; an inherited icon would suppress the fork glyph
+that marks the row as a clone).
 
 The clone sheet (`promptCloneProject`) shows an **Open with** picker when the
 SOURCE project has agents set (`agentsProvider`, Project Settings → Agents):
