@@ -734,9 +734,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     var s = $0; s.name = nil; s.icon = nil; return s
                 }
             } : nil
+        // A clone's fallback is its runtime name ("Zetty/fork-1"), not the
+        // directory basename ("zetty-fork-1") — otherwise the launch-time
+        // rename-apply pass (`applyProjectNameOverrides`) clobbers every
+        // override-less clone's display name on restore.
+        let fallbackName = project.isHome ? "Home"
+            : project.cloneSource != nil ? project.name
+            : (project.rootPath as NSString).lastPathComponent
         return ProjectSettingsResolver.resolve(
             own ?? inherited,
-            fallbackName: project.isHome ? "Home" : (project.rootPath as NSString).lastPathComponent,
+            fallbackName: fallbackName,
             global: appConfig)
     }
 
