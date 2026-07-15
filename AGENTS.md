@@ -232,6 +232,14 @@ wholesale if one exists; otherwise it falls back to the source project's
 settings with `name` cleared (so an inherited file doesn't rename the clone
 to match its source).
 
+The clone sheet (`promptCloneProject`) shows an **Open with** picker when the
+SOURCE project has agents set (`agentsProvider`, Project Settings → Agents):
+each enabled agent plus "Standard session", defaulting to the first agent.
+The pick's command threads through `registerClone(plan:outcome:focus:startupCommand:)`
+into `pendingStartupCommands` BEFORE the pane spawns — the same injection
+path as the new-pane agent chooser. CLI `zetty clone` never injects a
+command.
+
 Limits: no clones of clones (`cloneSource == nil` required on the source),
 Home/Scratch can't be cloned. `WorkspaceModel.regroup()` slots each clone row
 immediately after its source in sidebar/CLI order; an orphaned clone (source

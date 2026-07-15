@@ -30,7 +30,10 @@ by the tool it's running.
   copy-on-write copy under `~/.zetty/clones/<project>-<name>` — every
   untracked file, `.env`, and `node_modules` included — checked out on its
   own git branch (`zetty/<name>`); it nests under its source in the sidebar
-  behind a fork glyph. **Remove Clone…** offers **Fetch & Delete** (lands the
+  behind a fork glyph. When the project has agents set (Project Settings →
+  Agents), the clone sheet offers **Open with** — pick an agent (the default)
+  and it launches in the clone's first pane, or choose Standard session.
+  **Remove Clone…** offers **Fetch & Delete** (lands the
   branch back in the original repo first — merge it with your normal tools)
   or a plain delete, warning before discarding uncommitted or unfetched work.
   No clones of clones, Home/Scratch can't be cloned, and non-APFS volumes

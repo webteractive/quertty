@@ -1462,12 +1462,22 @@ final class TerminalViewController: NSViewController {
 
     /// Registers a finished clone copy as a workspace project (main thread) and
     /// returns its first pane's short id. Background by default; `focus`
-    /// switches to it and spawns its pane. Layout templates and startup commands
-    /// deliberately do NOT apply — the clone carries the source's real files.
-    func registerClone(plan: ClonePlan, outcome: CloneRunner.Outcome, focus: Bool) -> Result<String, ControlError> {
+    /// switches to it and spawns its pane. Layout templates deliberately do
+    /// NOT apply — the clone carries the source's real files. `startupCommand`
+    /// (the clone sheet's "Open with" agent) injects into the first pane once
+    /// it spawns, via the same path the new-pane agent chooser uses.
+    func registerClone(plan: ClonePlan, outcome: CloneRunner.Outcome, focus: Bool,
+                       startupCommand: String? = nil) -> Result<String, ControlError> {
         let project = workspace.addCloneProject(
             name: plan.projectName, rootPath: plan.targetPath,
             cloneSource: plan.sourceRootPath, makeActive: focus)
+        // Resolve the first pane BEFORE the rebuild spawns it, so the agent
+        // command is pending by the time the surface appears.
+        let firstSurface = project.tabList.activeTree.focusedSurface
+            ?? project.tabList.activeTree.layout.surfaces.first
+        if let startupCommand, let firstSurface {
+            pendingStartupCommands[firstSurface.id] = startupCommand
+        }
         refreshTabBar()
         refreshSidebar()
         if focus {
@@ -1488,16 +1498,17 @@ final class TerminalViewController: NSViewController {
             presentGitInitWarning(
                 "The volume doesn't support copy-on-write, so the clone is a full copy.")
         }
-        guard let surface = project.tabList.activeTree.focusedSurface
-                ?? project.tabList.activeTree.layout.surfaces.first else {
+        guard let firstSurface else {
             return .failure(.noSuchPane("clone added but no pane found"))
         }
-        return .success(SessionPersistence.shortID(for: surface.id))
+        return .success(SessionPersistence.shortID(for: firstSurface.id))
     }
 
-    /// Sheet asking for a clone name (pre-filled with the next free "fork-N"),
-    /// then clones in the background and focuses the result. Interactive entry —
-    /// agents use `zetty clone` instead.
+    /// Sheet asking for a clone name (pre-filled with the next free "fork-N")
+    /// plus, when the source project has agents set, an "Open with" picker
+    /// (defaulting to the first agent) that launches the pick in the clone's
+    /// first pane. Clones in the background and focuses the result.
+    /// Interactive entry — agents use `zetty clone` instead.
     func promptCloneProject(at index: Int) {
         guard workspace.projects.indices.contains(index) else { return }
         let source = workspace.projects[index]
@@ -1512,7 +1523,36 @@ final class TerminalViewController: NSViewController {
             + " on its own git branch. Everything comes along — untracked files, deps, caches."
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
         field.stringValue = CloneSupport.defaultCloneName(existing: taken)
-        alert.accessoryView = field
+
+        // "Open with" picker — only when the source project has agents set
+        // (Project Settings → Agents; the clone inherits those settings).
+        // Defaults to the first agent: cloning for a parallel agent is the
+        // primary flow, so plain Enter clones AND launches it.
+        let agents = (agentsProvider?(source) ?? .disabled).agents
+        var openPicker: NSPopUpButton?
+        if agents.isEmpty {
+            alert.accessoryView = field
+        } else {
+            let picker = NSPopUpButton(frame: .zero, pullsDown: false)
+            for resolved in agents {
+                picker.addItem(withTitle: "Open with \(resolved.agent.displayName)")
+            }
+            picker.addItem(withTitle: "Standard session")
+            picker.selectItem(at: 0)
+            openPicker = picker
+            let stack = NSStackView(views: [field, picker])
+            stack.orientation = .vertical
+            stack.alignment = .leading
+            stack.spacing = 8
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            field.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                field.widthAnchor.constraint(equalToConstant: 240),
+                picker.widthAnchor.constraint(equalToConstant: 240),
+            ])
+            stack.setFrameSize(stack.fittingSize)
+            alert.accessoryView = stack
+        }
         alert.window.initialFirstResponder = field
         alert.addButton(withTitle: "Clone")
         alert.addButton(withTitle: "Cancel")
@@ -1527,6 +1567,11 @@ final class TerminalViewController: NSViewController {
             case .failure(let error):
                 self.presentCloneError(error.localizedDescription)
             case .success(let plan):
+                // Last picker item is "Standard session" → no command.
+                let startupCommand: String? = openPicker.flatMap { picker in
+                    let index = picker.indexOfSelectedItem
+                    return agents.indices.contains(index) ? agents[index].command : nil
+                }
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     let result = CloneRunner.clone(plan)
                     DispatchQueue.main.async {
@@ -1535,7 +1580,8 @@ final class TerminalViewController: NSViewController {
                         case .failure(let failure):
                             self.presentCloneError(failure.message)
                         case .success(let outcome):
-                            _ = self.registerClone(plan: plan, outcome: outcome, focus: true)
+                            _ = self.registerClone(plan: plan, outcome: outcome, focus: true,
+                                                   startupCommand: startupCommand)
                         }
                     }
                 }
