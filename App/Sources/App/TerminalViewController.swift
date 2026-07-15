@@ -1628,7 +1628,6 @@ final class TerminalViewController: NSViewController {
     /// confirmation dialog — the CLI call IS the confirmation. Returns an
     /// error message, or nil on success.
     func removeProjectNamed(_ name: String, fetch: Bool = false, discard: Bool = false) -> String? {
-        guard !fetch, !discard else { return "clone removal flags are not wired yet" }
         let matches = workspace.projects.enumerated().filter {
             $0.element.name.lowercased() == name.lowercased()
         }
@@ -1641,7 +1640,35 @@ final class TerminalViewController: NSViewController {
         guard !match.element.isHome else {
             return "Home can't be removed"
         }
+
+        guard let sourceRoot = match.element.cloneSource else {
+            // Ordinary project — the clone flags don't apply.
+            guard !fetch, !discard else {
+                return "\"\(name)\" is not a clone — --fetch/--discard don't apply"
+            }
+            performRemoveProject(at: match.offset)
+            return nil
+        }
+
+        // Clone: no dialogs on the CLI — unsaved work demands an explicit flag.
+        let cloneRoot = match.element.rootPath
+        let state = CloneRunner.probeWorkState(cloneRoot: cloneRoot, sourceRoot: sourceRoot)
+        if state != .clean && !fetch && !discard {
+            return "clone has unsaved work — pass --fetch to land its branch in the original first, or --discard to delete anyway"
+        }
+        if fetch {
+            guard let branch = CloneRunner.currentBranch(in: cloneRoot) else {
+                return "fetch-back failed — the clone has no current branch (detached HEAD?); nothing was deleted"
+            }
+            if let error = CloneRunner.fetchBack(sourceRoot: sourceRoot, clonePath: cloneRoot,
+                                                 branch: branch) {
+                return "fetch-back failed — nothing was deleted: \(error)"
+            }
+        }
         performRemoveProject(at: match.offset)
+        if let error = CloneRunner.deleteCloneDirectory(at: cloneRoot) {
+            return "clone removed from zetty, but its directory couldn't be deleted: \(error)"
+        }
         return nil
     }
 
@@ -2282,6 +2309,9 @@ final class TerminalViewController: NSViewController {
     private func confirmRemoveProject(at index: Int) {
         guard workspace.projects.count > 1,
               workspace.projects.indices.contains(index) else { return }
+        if workspace.projects[index].cloneSource != nil {
+            return confirmRemoveClone(at: index)
+        }
         let project = workspace.projects[index]
         let tabCount = project.tabList.trees.count
 
@@ -2332,6 +2362,103 @@ final class TerminalViewController: NSViewController {
         onWorkspaceDidChange?()
         if let focused = focusedTerminalView() {
             view.window?.makeFirstResponder(focused)
+        }
+    }
+
+    // MARK: - Remove Clone (fetch-back + guarded delete)
+
+    /// Probes the clone's git state off-main, then offers: fetch the clone's
+    /// branch back into the original repo and delete (default) · delete without
+    /// fetching · cancel. Fetch failure ABORTS — nothing is deleted.
+    private func confirmRemoveClone(at index: Int) {
+        guard workspace.projects.indices.contains(index) else { return }
+        let clone = workspace.projects[index]
+        guard let sourcePath = clone.cloneSource else { return }
+        let cloneID = clone.id
+        let cloneRoot = clone.rootPath
+        // The fetch target must still exist as a real directory (orphaned clones
+        // degrade to delete-with-warning).
+        var isDir: ObjCBool = false
+        let sourceExists = FileManager.default.fileExists(atPath: sourcePath, isDirectory: &isDir)
+            && isDir.boolValue
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let state = CloneRunner.probeWorkState(cloneRoot: cloneRoot, sourceRoot: sourcePath)
+            DispatchQueue.main.async {
+                self?.presentRemoveCloneDialog(cloneID: cloneID, state: state,
+                                               sourceExists: sourceExists)
+            }
+        }
+    }
+
+    private func presentRemoveCloneDialog(cloneID: UUID, state: CloneWorkState, sourceExists: Bool) {
+        guard let index = workspace.projects.firstIndex(where: { $0.id == cloneID }) else { return }
+        let clone = workspace.projects[index]
+        let offerFetch: Bool
+        switch state {
+        case .clean:                 offerFetch = false
+        case .unfetched:             offerFetch = sourceExists
+        case .dirty(let unfetched):  offerFetch = sourceExists && unfetched
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Remove clone “\(clone.name)”?"
+        var lines = ["This closes its tabs, ends their sessions, and deletes \(clone.rootPath)."]
+        if case .dirty = state {
+            lines.append("⚠ The clone has UNCOMMITTED changes that will be lost.")
+        }
+        if offerFetch {
+            lines.append("“Fetch & Delete” first lands its branch in the original repo"
+                + " so its commits survive; merge with your normal tools.")
+        } else if case .unfetched = state {
+            lines.append("⚠ The clone has commits the original never fetched, and the"
+                + " original directory is gone — deleting loses them.")
+        }
+        alert.informativeText = lines.joined(separator: "\n")
+        if offerFetch {
+            alert.addButton(withTitle: "Fetch & Delete")
+            alert.addButton(withTitle: "Delete").hasDestructiveAction = true
+            alert.addButton(withTitle: "Cancel")
+        } else {
+            alert.addButton(withTitle: "Delete").hasDestructiveAction = true
+            alert.addButton(withTitle: "Cancel")
+        }
+
+        let complete: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self,
+                  let current = self.workspace.projects.firstIndex(where: { $0.id == cloneID })
+            else { return }
+            let cloneRoot = self.workspace.projects[current].rootPath
+            let sourceRoot = self.workspace.projects[current].cloneSource
+            let fetchChosen = offerFetch && response == .alertFirstButtonReturn
+            let deleteChosen = fetchChosen
+                || (offerFetch && response == .alertSecondButtonReturn)
+                || (!offerFetch && response == .alertFirstButtonReturn)
+            guard deleteChosen else { return }
+            if fetchChosen, let sourceRoot {
+                // The clone repo's CURRENT branch carries the work — robust
+                // against project renames (never derived from the display name).
+                guard let branch = CloneRunner.currentBranch(in: cloneRoot) else {
+                    self.presentCloneError("Fetch-back failed — the clone has no current"
+                        + " branch (detached HEAD?). Nothing was deleted.")
+                    return
+                }
+                if let error = CloneRunner.fetchBack(sourceRoot: sourceRoot,
+                                                     clonePath: cloneRoot, branch: branch) {
+                    self.presentCloneError("Fetch-back failed — nothing was deleted:\n\(error)")
+                    return
+                }
+            }
+            self.performRemoveProject(at: current)
+            if let error = CloneRunner.deleteCloneDirectory(at: cloneRoot) {
+                self.presentCloneError("The clone was removed from zetty, but its directory"
+                    + " couldn't be deleted:\n\(error)")
+            }
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: complete)
+        } else {
+            complete(alert.runModal())
         }
     }
 
