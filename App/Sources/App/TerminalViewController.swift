@@ -529,6 +529,10 @@ final class TerminalViewController: NSViewController {
             self?.confirmRemoveProject(at: index)
         }
 
+        sidebar.onCloneProject = { [weak self] index in
+            self?.promptCloneProject(at: index)
+        }
+
         sidebar.onRenameProject = { [weak self] index in
             guard let self, self.workspace.projects.indices.contains(index) else { return }
             self.onRenameProject?(self.workspace.projects[index])
@@ -1211,6 +1215,10 @@ final class TerminalViewController: NSViewController {
             PaletteCommand(glyph: "←", label: "Previous Tab", kbd: "⌘{") { [weak self] in self?.selectPreviousTab(nil) },
             PaletteCommand(glyph: "★", label: "Pin / Unpin Current Project", kbd: "") { [weak self] in self?.togglePinActiveProject() },
             PaletteCommand(glyph: "＋", label: "Add Project…", kbd: "⌘O") { [weak self] in self?.addProject(nil) },
+            PaletteCommand(glyph: "⎇", label: "Clone Current Project…", kbd: "") { [weak self] in
+                guard let self else { return }
+                self.promptCloneProject(at: self.workspace.activeIndex)
+            },
             PaletteCommand(glyph: "⧉", label: "New Scratch Terminal", kbd: "⌃⌘N") { [weak self] in self?.newScratchTerminal() },
             PaletteCommand(glyph: "⌦", label: "Close All Scratch Terminals", kbd: "") { [weak self] in self?.closeAllScratchTerminals() },
             PaletteCommand(glyph: "☾", label: "Hibernate Current Project", kbd: "") { [weak self] in
@@ -1485,6 +1493,69 @@ final class TerminalViewController: NSViewController {
             return .failure(.noSuchPane("clone added but no pane found"))
         }
         return .success(SessionPersistence.shortID(for: surface.id))
+    }
+
+    /// Sheet asking for a clone name (pre-filled with the next free "fork-N"),
+    /// then clones in the background and focuses the result. Interactive entry —
+    /// agents use `zetty clone` instead.
+    func promptCloneProject(at index: Int) {
+        guard workspace.projects.indices.contains(index) else { return }
+        let source = workspace.projects[index]
+        guard !source.isScratch, !source.isHome, source.cloneSource == nil else { return }
+        let taken = Set(workspace.clones(of: source).map {
+            String($0.name.dropFirst(source.name.count + 1))
+        })
+
+        let alert = NSAlert()
+        alert.messageText = "Clone \u{201c}\(source.name)\u{201d}"
+        alert.informativeText = "Creates an instant copy-on-write copy under ~/.zetty/clones"
+            + " on its own git branch. Everything comes along — untracked files, deps, caches."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = CloneSupport.defaultCloneName(existing: taken)
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        alert.addButton(withTitle: "Clone")
+        alert.addButton(withTitle: "Cancel")
+
+        let sourceID = source.id
+        let complete: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            // Re-resolve by identity — indices can shift while the sheet is up.
+            guard let current = self.workspace.projects.first(where: { $0.id == sourceID }) else { return }
+            let name = field.stringValue.trimmingCharacters(in: .whitespaces)
+            switch self.planClone(projectName: current.name, cloneName: name.isEmpty ? nil : name) {
+            case .failure(let error):
+                self.presentCloneError(error.localizedDescription)
+            case .success(let plan):
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    let result = CloneRunner.clone(plan)
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        switch result {
+                        case .failure(let failure):
+                            self.presentCloneError(failure.message)
+                        case .success(let outcome):
+                            _ = self.registerClone(plan: plan, outcome: outcome, focus: true)
+                        }
+                    }
+                }
+            }
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: complete)
+        } else {
+            complete(alert.runModal())
+        }
+    }
+
+    private func presentCloneError(_ text: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Clone failed"
+        alert.informativeText = text
+        alert.addButton(withTitle: "OK")
+        if let window = view.window { alert.beginSheetModal(for: window, completionHandler: nil) }
+        else { alert.runModal() }
     }
 
     // MARK: - Create Project (new folder on disk)
@@ -2025,7 +2096,11 @@ final class TerminalViewController: NSViewController {
                 customGlyph: identity?.glyph,
                 isHibernated: project.isHibernated,
                 isScratch: project.isScratch,
-                isHome: project.isHome
+                isHome: project.isHome,
+                isClone: project.cloneSource != nil,
+                cloneSourceIndex: project.cloneSource.flatMap { src in
+                    workspace.projects.firstIndex { $0.rootPath == src && $0.cloneSource == nil }
+                }
             )
         }
         sidebarView?.update(

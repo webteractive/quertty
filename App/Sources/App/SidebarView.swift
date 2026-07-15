@@ -20,6 +20,8 @@ struct SidebarProject {
     let isHibernated: Bool               // frozen: dimmed row + moon glyph
     let isScratch: Bool                  // project-less ephemeral terminal (Scratch section)
     let isHome: Bool                     // permanent Home project (own top section)
+    let isClone: Bool                    // renders attached under its source with a fork glyph
+    let cloneSourceIndex: Int?           // index of the source project (nil → orphan)
 }
 
 /// Maps an agent status to its status-dot color, or nil for "no agent".
@@ -115,6 +117,9 @@ final class SidebarView: NSView {
     /// Called with the project index when the user picks "Remove Project…"
     /// from a project row's context menu.
     var onRemoveProject: ((Int) -> Void)?
+
+    /// Called with the project index for the context menu's "Clone Project…".
+    var onCloneProject: ((Int) -> Void)?
 
     /// Called with the project index for the context menu's "Rename…".
     var onRenameProject: ((Int) -> Void)?
@@ -484,24 +489,43 @@ final class SidebarView: NSView {
         let hibernated = rest.filter { $0.element.isHibernated }
         let scratch = awake.filter { $0.element.isScratch }
         let regular = awake.filter { !$0.element.isScratch }
-        let pinned = regular.filter { $0.element.isPinned }
-        let unpinned = regular.filter { !$0.element.isPinned }
+        // A clone with a visible, awake source renders attached — spliced in right
+        // after its source row, not counted in section headers. Orphans (source
+        // removed) and clones of hidden/hibernated sources fall back to ordinary rows.
+        let regularOffsets = Set(regular.map(\.offset))
+        let attachedClones = regular.filter { entry in
+            guard entry.element.isClone, let s = entry.element.cloneSourceIndex else { return false }
+            return regularOffsets.contains(s)
+        }
+        let attachedOffsets = Set(attachedClones.map(\.offset))
+        let standalone = regular.filter { !attachedOffsets.contains($0.offset) }
+        let pinned = standalone.filter { $0.element.isPinned }
+        let unpinned = standalone.filter { !$0.element.isPinned }
         homeCount = home.count
         pinnedCount = pinned.count
         projectsCount = unpinned.count
         scratchCount = scratch.count
         hibernatedCount = hibernated.count
 
+        // Each source row is immediately followed by its attached clone rows.
+        func withClones(_ entries: [(offset: Int, element: SidebarProject)]) -> [OutlineItem.Kind] {
+            entries.flatMap { entry -> [OutlineItem.Kind] in
+                [.project(entry.offset)] + attachedClones
+                    .filter { $0.element.cloneSourceIndex == entry.offset }
+                    .map { .project($0.offset) }
+            }
+        }
+
         var rows: [OutlineItem.Kind] = []
         // Home renders as a single row at the very top — no section header.
         rows += home.map { .project($0.offset) }
         if !pinned.isEmpty {
             rows.append(.header(.pinned))
-            rows += pinned.map { .project($0.offset) }
+            rows += withClones(pinned)
         }
         if !unpinned.isEmpty {
             rows.append(.header(.projects))
-            rows += unpinned.map { .project($0.offset) }
+            rows += withClones(unpinned)
         }
         if !scratch.isEmpty {
             rows.append(.header(.scratch))
@@ -573,6 +597,12 @@ final class SidebarView: NSView {
         onRemoveProject?(projectIndex)
     }
 
+    @objc private func cloneProjectMenuClicked(_ sender: NSMenuItem) {
+        let projectIndex = sender.tag
+        guard projects.indices.contains(projectIndex) else { return }
+        onCloneProject?(projectIndex)
+    }
+
     @objc private func hibernateMenuClicked(_ sender: NSMenuItem) {
         let projectIndex = sender.tag
         guard projects.indices.contains(projectIndex) else { return }
@@ -629,13 +659,24 @@ extension SidebarView: NSMenuDelegate {
             hibernate.target = self
             hibernate.tag = p
             menu.addItem(hibernate)
+
+            if !isHome && !projects[p].isClone {
+                let clone = NSMenuItem(title: "Clone Project\u{2026}",
+                                       action: #selector(cloneProjectMenuClicked(_:)),
+                                       keyEquivalent: "")
+                clone.target = self
+                clone.tag = p
+                menu.addItem(clone)
+            }
         }
 
         // Home is permanent — it offers settings/hibernation but no removal.
         if !isHome {
             menu.addItem(.separator())
 
-            let remove = NSMenuItem(title: isScratch ? "Close Terminal" : "Remove Project\u{2026}",
+            let removeTitle = isScratch ? "Close Terminal"
+                : projects[p].isClone ? "Remove Clone\u{2026}" : "Remove Project\u{2026}"
+            let remove = NSMenuItem(title: removeTitle,
                                     action: #selector(removeProjectMenuClicked(_:)),
                                     keyEquivalent: "")
             remove.target = self
@@ -882,9 +923,10 @@ extension SidebarView: NSOutlineViewDelegate {
                 agentStatus: project.status,
                 toolIcon: project.icon,
                 projectColor: project.projectColor,
-                customGlyph: project.customGlyph,
+                customGlyph: project.customGlyph ?? (project.isClone ? "arrow.triangle.branch" : nil),
                 isHibernated: project.isHibernated,
                 isScratch: project.isScratch,
+                isClone: project.isClone,
                 isHome: project.isHome,
                 projectIndex: p,
                 target: self,
@@ -1033,6 +1075,8 @@ private final class ProjectCellView: NSTableCellView {
     /// Collapses the tool-logo slot when the project has none (0 width, no gap).
     private var toolIconWidth: NSLayoutConstraint!
     private var toolIconGap: NSLayoutConstraint!
+    /// Indents attached clone rows under their source (4pt normal, 18pt cloned).
+    private var glyphLeading: NSLayoutConstraint!
 
     override init(frame frameRect: NSRect) {
         nameLabel = NSTextField(labelWithString: "")
@@ -1062,8 +1106,9 @@ private final class ProjectCellView: NSTableCellView {
 
         toolIconWidth = toolIconView.widthAnchor.constraint(equalToConstant: 0)
         toolIconGap = nameLabel.leadingAnchor.constraint(equalTo: toolIconView.trailingAnchor, constant: 0)
+        glyphLeading = glyphView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4)
         NSLayoutConstraint.activate([
-            glyphView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 4),
+            glyphLeading,
             glyphView.centerYAnchor.constraint(equalTo: centerYAnchor),
             glyphView.widthAnchor.constraint(equalToConstant: 15),
             glyphView.heightAnchor.constraint(equalToConstant: 15),
@@ -1090,9 +1135,11 @@ private final class ProjectCellView: NSTableCellView {
     func configure(name: String, isPinned: Bool, isActive: Bool, agentStatus: AgentStatus?,
                    toolIcon: NSImage? = nil, projectColor: NSColor? = nil,
                    customGlyph: String? = nil, isHibernated: Bool = false, isScratch: Bool = false,
+                   isClone: Bool = false,
                    isHome: Bool = false,
                    projectIndex: Int, target: AnyObject, action: Selector) {
         nameLabel.stringValue = name
+        glyphLeading.constant = isClone ? 18 : 4
         // Hibernated rows read as dormant: dim text regardless of active state.
         nameLabel.textColor = isHibernated ? ZTheme.current.fg3Color
             : (isActive ? ZTheme.current.fgColor : ZTheme.current.fg2Color)
