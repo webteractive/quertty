@@ -23,7 +23,8 @@ import Foundation
             == .addProject(path: "/Users/x/proj", name: "proj", focus: true))
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.addProject(path: "/Users/x/proj", name: nil, focus: false)))
             == .addProject(path: "/Users/x/proj", name: nil, focus: false))
-    #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.removeProject(name: "zetty"))) == .removeProject(name: "zetty"))
+    #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.removeProject(name: "zetty", fetch: false, discard: false)))
+            == .removeProject(name: "zetty", fetch: false, discard: false))
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.hibernateProject(name: "api"))) == .hibernateProject(name: "api"))
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(ControlRequest.wakeProject(name: "api"))) == .wakeProject(name: "api"))
     #expect(try ControlWire.decodeRequest(ControlWire.encodeLine(
@@ -153,4 +154,32 @@ private let panes: [StatusSnapshot.Pane] = [
     #expect(throws: (any Error).self) { try PaneSelector.cwd("/nope").resolve(in: panes) }
     // Two panes share /Users/x/proj → ambiguous.
     #expect(throws: (any Error).self) { try PaneSelector.cwd("/Users/x/proj").resolve(in: panes) }
+}
+
+// MARK: - Clone verb + remove-project flags
+
+@Test func cloneProjectRequestRoundTrips() throws {
+    let request = ControlRequest.cloneProject(project: "zetty", name: "fix-auth", focus: true)
+    let line = try ControlWire.encodeLine(request)
+    #expect(try ControlWire.decodeRequest(line) == request)
+
+    let defaults = ControlRequest.cloneProject(project: nil, name: nil, focus: false)
+    let defaultsLine = try ControlWire.encodeLine(defaults)
+    #expect(try ControlWire.decodeRequest(defaultsLine) == defaults)
+}
+
+@Test func removeProjectFlagsRoundTripAndDefaultFalse() throws {
+    let request = ControlRequest.removeProject(name: "zetty/fork-1", fetch: true, discard: false)
+    let line = try ControlWire.encodeLine(request)
+    #expect(try ControlWire.decodeRequest(line) == request)
+
+    // A pre-flags CLI sends no fetch/discard keys — they must decode false.
+    let legacy = #"{"command":"remove-project","project":"alpha"}"#
+    #expect(try ControlWire.decodeRequest(legacy)
+            == .removeProject(name: "alpha", fetch: false, discard: false))
+}
+
+@Test func cliRecognizesClone() {
+    #expect(ControlCLI.recognizes(["clone"]))
+    #expect(ControlCLI.recognizes(["clone", "--project", "zetty"]))
 }

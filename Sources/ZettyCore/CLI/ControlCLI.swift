@@ -36,9 +36,20 @@ public enum ControlCLI {
                                               (--git runs git init; --focus
                                               switches to it); prints its first
                                               pane's id on stdout
-      zetty remove-project <name>           remove a project (closes its tabs and
-                                              ends their sessions; no confirmation;
-                                              the last project can't be removed)
+      zetty clone [--project <name>] [--name <clone-name>] [--focus]
+                                              fork a project into an isolated
+                                              copy-on-write clone (own git branch
+                                              zetty/<clone-name>) under
+                                              ~/.zetty/clones, in the background;
+                                              --focus switches to it. Prints the
+                                              clone's first pane id
+      zetty remove-project <name> [--fetch | --discard]
+                                              remove a project (closes its tabs and
+                                              ends their sessions; no confirmation).
+                                              For clones: --fetch lands the clone's
+                                              branch in the original repo first,
+                                              --discard deletes without fetching; a
+                                              clone with unsaved work requires one
       zetty hibernate <name>                free a project's sessions/processes/
                                               panes (keeps its layout)
       zetty wake <name>                     wake a hibernated project (fresh shells)
@@ -87,7 +98,7 @@ public enum ControlCLI {
     /// binary to decide CLI mode vs. launching the GUI).
     public static func recognizes(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
-        return ["status", "ls", "send", "capture", "new-tab", "add-project", "new-project",
+        return ["status", "ls", "send", "capture", "new-tab", "add-project", "new-project", "clone",
                 "remove-project", "hibernate", "wake", "split", "break", "focus", "close", "reload",
                 "scratch", "scratch-clear", "quit",
                 "help", "--help", "-h"].contains(first)
@@ -117,6 +128,8 @@ public enum ControlCLI {
             return runAddProject(arguments)
         case "new-project":
             return runNewProject(arguments)
+        case "clone":
+            return runClone(arguments)
         case "remove-project":
             return runRemoveProject(arguments)
         case "hibernate":
@@ -341,17 +354,58 @@ public enum ControlCLI {
         return expectPane(.newProject(path: absolute, name: name, gitInit: gitInit, focus: focus))
     }
 
+    private static func runClone(_ arguments: [String]) -> Int32 {
+        var project: String?
+        var name: String?
+        var focus = false
+        var index = 0
+        while index < arguments.count {
+            switch arguments[index] {
+            case "--project":
+                index += 1
+                guard index < arguments.count else { return failure("--project needs a value") }
+                project = arguments[index]
+            case "--name":
+                index += 1
+                guard index < arguments.count else { return failure("--name needs a value") }
+                name = arguments[index]
+            case "--focus":
+                focus = true
+            case "--help", "-h":
+                print(usage)
+                return 0
+            default:
+                return failure("unknown argument \"\(arguments[index])\"")
+            }
+            index += 1
+        }
+        return expectPane(.cloneProject(project: project, name: name, focus: focus))
+    }
+
     private static func runRemoveProject(_ arguments: [String]) -> Int32 {
         if arguments.contains("--help") || arguments.contains("-h") {
             print(usage)
             return 0
         }
+        var fetch = false
+        var discard = false
+        var nameParts: [String] = []
+        for argument in arguments {
+            switch argument {
+            case "--fetch":   fetch = true
+            case "--discard": discard = true
+            default:          nameParts.append(argument)
+            }
+        }
+        guard !(fetch && discard) else {
+            return failure("--fetch and --discard are mutually exclusive")
+        }
         // Positional name — joined so unquoted multi-word names still work.
-        let name = arguments.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        let name = nameParts.joined(separator: " ").trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else {
             return failure("remove-project needs a project name")
         }
-        return expectOK(.removeProject(name: name), success: nil)
+        return expectOK(.removeProject(name: name, fetch: fetch, discard: discard), success: nil)
     }
 
     /// Shared handler for name-targeted project commands (hibernate/wake).

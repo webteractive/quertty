@@ -28,10 +28,19 @@ public enum ControlRequest: Equatable, Sendable {
     /// `focus` switches to it and spawns its pane. The response is `.pane` with
     /// its first pane's short id.
     case addProject(path: String, name: String?, focus: Bool)
+    /// Clone the named project (nil → the active project) into an isolated
+    /// APFS copy-on-write copy under ~/.zetty/clones, on its own git branch.
+    /// `name` is the clone name (nil → next free "fork-N"). Background by
+    /// default; `focus` switches to it. Response `.pane` with the clone's
+    /// first pane's short id.
+    case cloneProject(project: String?, name: String?, focus: Bool)
     /// Remove the named project (case-insensitive), closing all of its
     /// tabs/panes and ending their zmx sessions (no confirmation dialog —
     /// the CLI call IS the confirmation). The last project can't be removed.
-    case removeProject(name: String)
+    /// For clones: `fetch` lands the clone's branch in the source repo before
+    /// deleting, `discard` skips that; a clone with unsaved work refuses
+    /// removal unless one of the two is passed.
+    case removeProject(name: String, fetch: Bool, discard: Bool)
     /// Create a new directory at `path` (which must NOT already exist) and add
     /// it as a project named `name` (nil → the last path component); `gitInit`
     /// runs `git init` in the new folder. Added in the background by default;
@@ -68,7 +77,7 @@ public enum ControlRequest: Equatable, Sendable {
 
 extension ControlRequest: Codable {
     private enum CodingKeys: String, CodingKey {
-        case command, target, text, enter, keys, project, wholeTab, killSessions, vertical, lines, path, name, gitInit, focus
+        case command, target, text, enter, keys, project, wholeTab, killSessions, vertical, lines, path, name, gitInit, focus, fetch, discard
     }
 
     public init(from decoder: Decoder) throws {
@@ -96,8 +105,18 @@ extension ControlRequest: Codable {
                 name: try container.decodeIfPresent(String.self, forKey: .name),
                 focus: try container.decodeIfPresent(Bool.self, forKey: .focus) ?? false
             )
+        case "clone":
+            self = .cloneProject(
+                project: try container.decodeIfPresent(String.self, forKey: .project),
+                name: try container.decodeIfPresent(String.self, forKey: .name),
+                focus: try container.decodeIfPresent(Bool.self, forKey: .focus) ?? false
+            )
         case "remove-project":
-            self = .removeProject(name: try container.decode(String.self, forKey: .project))
+            self = .removeProject(
+                name: try container.decode(String.self, forKey: .project),
+                fetch: try container.decodeIfPresent(Bool.self, forKey: .fetch) ?? false,
+                discard: try container.decodeIfPresent(Bool.self, forKey: .discard) ?? false
+            )
         case "hibernate":
             self = .hibernateProject(name: try container.decode(String.self, forKey: .project))
         case "wake":
@@ -166,9 +185,16 @@ extension ControlRequest: Codable {
             try container.encode(path, forKey: .path)
             try container.encodeIfPresent(name, forKey: .name)
             try container.encode(focus, forKey: .focus)
-        case .removeProject(let name):
+        case .cloneProject(let project, let name, let focus):
+            try container.encode("clone", forKey: .command)
+            try container.encodeIfPresent(project, forKey: .project)
+            try container.encodeIfPresent(name, forKey: .name)
+            try container.encode(focus, forKey: .focus)
+        case .removeProject(let name, let fetch, let discard):
             try container.encode("remove-project", forKey: .command)
             try container.encode(name, forKey: .project)
+            try container.encode(fetch, forKey: .fetch)
+            try container.encode(discard, forKey: .discard)
         case .hibernateProject(let name):
             try container.encode("hibernate", forKey: .command)
             try container.encode(name, forKey: .project)

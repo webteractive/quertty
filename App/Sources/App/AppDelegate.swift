@@ -1124,8 +1124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case .success(let pane): return .pane(pane)
             case .failure(let error): return .error(error.localizedDescription)
             }
-        case .removeProject(let name):
-            if let message = tvc.removeProjectNamed(name) {
+        case .removeProject(let name, let fetch, let discard):
+            if let message = tvc.removeProjectNamed(name, fetch: fetch, discard: discard) {
                 return .error(message)
             }
             return .ok
@@ -1160,7 +1160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return .error(message)
             }
             return .ok
-        case .capture, .quit:
+        case .capture, .quit, .cloneProject:
             // Slow verbs — handled on the socket queue in startControlSocket.
             return .error("internal: slow verb routed to the main handler")
         }

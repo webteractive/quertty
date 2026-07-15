@@ -1474,7 +1474,8 @@ final class TerminalViewController: NSViewController {
     /// closing all of its tabs/panes and ending their zmx sessions. No
     /// confirmation dialog — the CLI call IS the confirmation. Returns an
     /// error message, or nil on success.
-    func removeProjectNamed(_ name: String) -> String? {
+    func removeProjectNamed(_ name: String, fetch: Bool = false, discard: Bool = false) -> String? {
+        guard !fetch, !discard else { return "clone removal flags are not wired yet" }
         let matches = workspace.projects.enumerated().filter {
             $0.element.name.lowercased() == name.lowercased()
         }
