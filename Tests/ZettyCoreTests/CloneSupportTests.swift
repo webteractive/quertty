@@ -27,7 +27,7 @@ import Foundation
     #expect(plan.projectName == "zetty/fix-auth")
     #expect(plan.sourceRootPath == "/Users/g/AI/zetty")
     #expect(plan.targetPath == "/Users/g/.zetty/clones/zetty-fix-auth")
-    #expect(plan.branchName == "zetty/fix-auth")
+    #expect(plan.branchName == "fix-auth")
 }
 
 @Test func planDefaultsCloneNameWhenNil() throws {
@@ -56,9 +56,9 @@ import Foundation
 // MARK: - Git argument builders + parsers
 
 @Test func gitArgumentBuilders() {
-    #expect(CloneSupport.createBranchArgs(branch: "zetty/f1") == ["switch", "-c", "zetty/f1"])
-    #expect(CloneSupport.fetchBackArgs(clonePath: "/c", branch: "zetty/f1")
-            == ["fetch", "/c", "zetty/f1:zetty/f1"])
+    #expect(CloneSupport.createBranchArgs(branch: "f1") == ["switch", "-c", "f1"])
+    #expect(CloneSupport.fetchBackArgs(clonePath: "/c", branch: "f1")
+            == ["fetch", "/c", "f1:f1"])
     #expect(CloneSupport.tipArgs == ["rev-parse", "HEAD"])
     #expect(CloneSupport.commitExistsArgs(sha: "abc123") == ["cat-file", "-e", "abc123^{commit}"])
 }

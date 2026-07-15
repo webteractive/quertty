@@ -8,7 +8,7 @@ public struct ClonePlan: Equatable, Sendable {
     public let projectName: String     // "zetty/fork-1" (sidebar + CLI name)
     public let sourceRootPath: String
     public let targetPath: String      // <home>/.zetty/clones/zetty-fork-1
-    public let branchName: String      // "zetty/fork-1"
+    public let branchName: String      // "fork-1"
 
     public init(cloneName: String, projectName: String, sourceRootPath: String,
                 targetPath: String, branchName: String) {
@@ -105,7 +105,7 @@ public enum CloneSupport {
             projectName: "\(sourceName)/\(name)",
             sourceRootPath: sourceRootPath,
             targetPath: target,
-            branchName: "zetty/\(name)"
+            branchName: name
         ))
     }
 

@@ -206,7 +206,7 @@ old `workspace.json` files load unchanged.
 
 The split mirrors `GitStatus`: pure planning in `CloneSupport`
 (`ZettyCore/Clone/`) — `ClonePlan` (target path under
-`~/.zetty/clones/<slug(source)>-<name>`, branch `zetty/<name>`, display name
+`~/.zetty/clones/<slug(source)>-<name>`, branch `<name>`, display name
 `<source>/<name>`), name validation/slugging, git argument builders, and the
 removal classifier (`CloneWorkState`: clean / unfetched / dirty) — versus
 process IO in the app-layer `CloneRunner` (`cp -Rc` with a `cp -R` fallback
@@ -252,6 +252,22 @@ file forces a pointless full-copy fallback; real failures surface truncated
 via `summarizeCopyErrors`. `WorkspaceModel.regroup()` slots each clone row
 immediately after its source in sidebar/CLI order; an orphaned clone (source
 removed) falls back to an ordinary position.
+
+The copy runs off-main (GUI: a background queue; CLI: the socket queue), so
+the UI never blocks. While it runs, a transient "Cloning…" spinner row is
+spliced under the source (`TerminalViewController.pendingClones` +
+`beginPendingClone`/`endPendingClone`; rendered via `SidebarProject.isPendingClone`
+as a non-interactive `NSProgressIndicator` row — not selectable, no menu, not
+draggable). It clears when the copy finishes; the real clone row then arrives
+via `registerClone`.
+
+When the active project is a clone, `rebuildSurfaceNodeView()` slots a
+`CloneWarningBanner` (App layer) below the tab bar — a persistent yellow-accent
+caution strip (semantic `yellow` = attention) reminding that the CoW copy is
+disposable: uncommitted changes are lost on removal, so commit + push to origin
+or merge back into the source. It becomes the `topGuide` for the content, so it
+shows above the terminal AND the hibernation placeholder; it's recreated per
+rebuild, so it appears/disappears automatically as the active project switches.
 
 ### `ssh://` URL handover
 

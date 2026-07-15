@@ -58,6 +58,9 @@ final class TerminalViewController: NSViewController {
     /// The dormant-project placeholder, shown instead of `rootContentView` when
     /// the active project is hibernated.
     private var placeholderView: NSView?
+    /// The caution strip shown below the tab bar when the active project is a
+    /// clone (copy-on-write fork). Nil for ordinary projects.
+    private var cloneWarningBanner: CloneWarningBanner?
 
     /// The tab bar strip shown above the pane area.
     private var tabBarView: TabBarView?
@@ -983,6 +986,28 @@ final class TerminalViewController: NSViewController {
     /// relaunch can never re-run a command into a preserved session.
     private var pendingStartupCommands: [UUID: String] = [:]
 
+    /// Clones whose copy is in flight — rendered as transient "Cloning…"
+    /// spinner rows spliced under their source (never persisted). Keyed by a
+    /// token returned to the copy site so it can clear its own row on finish.
+    private var pendingClones: [(id: UUID, sourceRootPath: String, displayName: String)] = []
+
+    /// Registers a "Cloning…" placeholder row under the source and returns a
+    /// token; call `endPendingClone` when the copy finishes (success or fail).
+    func beginPendingClone(plan: ClonePlan) -> UUID {
+        let id = UUID()
+        pendingClones.append((id: id, sourceRootPath: plan.sourceRootPath,
+                              displayName: plan.projectName))
+        refreshSidebar()
+        return id
+    }
+
+    /// Clears a "Cloning…" placeholder row (the real clone row, if the copy
+    /// succeeded, comes in via `registerClone`'s own refresh).
+    func endPendingClone(_ id: UUID) {
+        pendingClones.removeAll { $0.id == id }
+        refreshSidebar()
+    }
+
     /// Injects a template pane's startup command shortly after its view
     /// spawns (the delay lets the shell — or the scrollback-restore wrapper's
     /// attach — start reading the pty before the text arrives).
@@ -1579,10 +1604,14 @@ final class TerminalViewController: NSViewController {
                     let index = picker.indexOfSelectedItem
                     return agents.indices.contains(index) ? agents[index].command : nil
                 }
+                // Show a "Cloning…" spinner row under the source while the copy
+                // runs off-main (it can be slow on a big tree / non-APFS copy).
+                let pendingToken = self.beginPendingClone(plan: plan)
                 DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                     let result = CloneRunner.clone(plan)
                     DispatchQueue.main.async {
                         guard let self else { return }
+                        self.endPendingClone(pendingToken)
                         switch result {
                         case .failure(let failure):
                             self.presentCloneError(failure.message)
@@ -2137,7 +2166,7 @@ final class TerminalViewController: NSViewController {
 
     /// Syncs the sidebar UI state with the workspace.
     func refreshSidebar() {
-        let sidebarProjects: [SidebarProject] = workspace.projects.map { project in
+        var sidebarProjects: [SidebarProject] = workspace.projects.map { project in
             let trees = project.tabList.trees
             // Agent status per tab (from the tab's focused surface).
             let statuses: [AgentStatus?] = trees.map { tree in
@@ -2193,8 +2222,24 @@ final class TerminalViewController: NSViewController {
                 isClone: project.cloneSource != nil,
                 cloneSourceIndex: project.cloneSource.flatMap { src in
                     workspace.projects.firstIndex { $0.rootPath == src && $0.cloneSource == nil }
-                }
+                },
+                isPendingClone: false
             )
+        }
+        // Splice in "Cloning…" placeholder rows: each nests under its source via
+        // cloneSourceIndex (falls back to a standalone row when the source isn't
+        // a visible top-level project, same as an orphan clone).
+        for pending in pendingClones {
+            let sourceIndex = workspace.projects.firstIndex {
+                $0.rootPath == pending.sourceRootPath && $0.cloneSource == nil
+            }
+            sidebarProjects.append(SidebarProject(
+                name: pending.displayName,
+                isPinned: false, tabTitles: [], tabStatuses: [], tabIcons: [],
+                icon: nil, status: nil, projectColor: nil, customGlyph: nil,
+                isHibernated: false, isScratch: false, isHome: false,
+                isClone: true, cloneSourceIndex: sourceIndex, isPendingClone: true
+            ))
         }
         sidebarView?.update(
             projects: sidebarProjects,
@@ -2848,11 +2893,30 @@ final class TerminalViewController: NSViewController {
         rootContentView = nil
         placeholderView?.removeFromSuperview()
         placeholderView = nil
+        cloneWarningBanner?.removeFromSuperview()
+        cloneWarningBanner = nil
 
         // Pin below the tab bar (28 pt), or to the top if there is no tab bar yet;
         // and above the status bar (if present), else to the container bottom.
-        let topGuide: NSLayoutYAxisAnchor = tabBarView?.bottomAnchor ?? container.topAnchor
+        var topGuide: NSLayoutYAxisAnchor = tabBarView?.bottomAnchor ?? container.topAnchor
         let bottomGuide = statusBarView?.topAnchor ?? container.bottomAnchor
+
+        // A clone's working copy is disposable — slot a caution strip below the
+        // tab bar and push the content (terminal OR hibernation placeholder)
+        // down beneath it.
+        if workspace.activeProject.cloneSource != nil {
+            let banner = CloneWarningBanner()
+            banner.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(banner)
+            NSLayoutConstraint.activate([
+                banner.topAnchor.constraint(equalTo: topGuide),
+                banner.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                banner.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                banner.heightAnchor.constraint(equalToConstant: CloneWarningBanner.height),
+            ])
+            cloneWarningBanner = banner
+            topGuide = banner.bottomAnchor
+        }
 
         // Active project hibernated → render a dormant placeholder (status +
         // Wake button) instead of terminal panes. Viewing never wakes it; the

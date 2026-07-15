@@ -39,7 +39,7 @@ public enum ControlCLI {
       zetty clone [--project <name>] [--name <clone-name>] [--focus]
                                               fork a project into an isolated
                                               copy-on-write clone (own git branch
-                                              zetty/<clone-name>) under
+                                              <clone-name>) under
                                               ~/.zetty/clones, in the background;
                                               --focus switches to it. Prints the
                                               clone's first pane id

@@ -1118,14 +1118,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 case .failure(let error):
                     return .error(error.localizedDescription)
                 case .success(let plan):
-                    switch CloneRunner.clone(plan) {
-                    case .failure(let failure):
-                        return .error(failure.message)
-                    case .success(let outcome):
-                        return DispatchQueue.main.sync {
-                            guard let tvc = self.terminalViewController else {
-                                return .error("Zetty is shutting down")
-                            }
+                    // Spinner row under the source while the copy runs on this
+                    // socket queue (mirrors the GUI clone's feedback).
+                    let pendingToken = DispatchQueue.main.sync {
+                        self.terminalViewController?.beginPendingClone(plan: plan)
+                    }
+                    let cloneResult = CloneRunner.clone(plan)
+                    return DispatchQueue.main.sync {
+                        guard let tvc = self.terminalViewController else {
+                            return .error("Zetty is shutting down")
+                        }
+                        if let pendingToken { tvc.endPendingClone(pendingToken) }
+                        switch cloneResult {
+                        case .failure(let failure):
+                            return .error(failure.message)
+                        case .success(let outcome):
                             switch tvc.registerClone(plan: plan, outcome: outcome, focus: focus) {
                             case .success(let pane): return .pane(pane)
                             case .failure(let error): return .error(error.localizedDescription)

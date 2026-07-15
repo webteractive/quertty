@@ -29,8 +29,13 @@ by the tool it's running.
   command palette / `zetty clone`) to fork it into an instant APFS
   copy-on-write copy under `~/.zetty/clones/<project>-<name>` — every
   untracked file, `.env`, and `node_modules` included — checked out on its
-  own git branch (`zetty/<name>`); it nests under its source in the sidebar
-  behind a fork glyph. When the project has agents set (Project Settings →
+  own git branch (named `<name>`); it nests under its source in the sidebar
+  behind a fork glyph, and a caution strip below the tab bar reminds you the
+  copy is disposable (commit + push, or merge back — uncommitted changes are
+  lost on removal). The copy runs in the background (the app never freezes); a
+  "Cloning…" spinner row appears under the source while it works and is
+  replaced by the real clone row when it lands. When the project has agents set
+  (Project Settings →
   Agents), the clone sheet offers **Open with** — pick an agent (the default)
   and it launches in the clone's first pane, or choose Standard session.
   **Remove Clone…** offers **Fetch & Delete** (lands the

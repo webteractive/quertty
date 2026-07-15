@@ -22,6 +22,7 @@ struct SidebarProject {
     let isHome: Bool                     // permanent Home project (own top section)
     let isClone: Bool                    // renders attached under its source with a fork glyph
     let cloneSourceIndex: Int?           // index of the source project (nil → orphan)
+    let isPendingClone: Bool             // transient "Cloning…" placeholder: spinner glyph, non-interactive
 }
 
 /// Maps an agent status to its status-dot color, or nil for "no agent".
@@ -632,6 +633,8 @@ extension SidebarView: NSMenuDelegate {
               let obj = outlineView.item(atRow: row) as? OutlineItem,
               case .project(let p) = obj.kind,
               projects.indices.contains(p) else { return }
+        // A "Cloning…" placeholder has no actions until the copy lands.
+        guard !projects[p].isPendingClone else { return }
 
         let isScratch = projects[p].isScratch
         let isHome = projects[p].isHome
@@ -748,10 +751,11 @@ extension SidebarView: NSOutlineViewDataSource {
             return pb
         case .project(let p):
             // No project drag while filtering (visible rows are a subset, so
-            // offsets don't map to neighbours) or for hibernated rows (that
-            // section isn't reorderable).
+            // offsets don't map to neighbours), for hibernated rows (that
+            // section isn't reorderable), or for "Cloning…" placeholders.
             guard filterText.trimmingCharacters(in: .whitespaces).isEmpty,
-                  projects.indices.contains(p), !projects[p].isHibernated else { return nil }
+                  projects.indices.contains(p), !projects[p].isHibernated,
+                  !projects[p].isPendingClone else { return nil }
             let pb = NSPasteboardItem()
             pb.setString("\(p)", forType: SidebarView.projectDragType)
             return pb
@@ -932,6 +936,7 @@ extension SidebarView: NSOutlineViewDelegate {
                 isScratch: project.isScratch,
                 isClone: project.isClone,
                 isHome: project.isHome,
+                isPendingClone: project.isPendingClone,
                 projectIndex: p,
                 target: self,
                 action: #selector(pinButtonClicked(_:))
@@ -962,6 +967,9 @@ extension SidebarView: NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
         guard let obj = item as? OutlineItem else { return false }
         if case .header = obj.kind { return false }
+        // "Cloning…" placeholders aren't real projects yet — not selectable.
+        if case .project(let p) = obj.kind,
+           projects.indices.contains(p), projects[p].isPendingClone { return false }
         return true
     }
 
@@ -1073,6 +1081,8 @@ private final class SidebarRowView: NSTableRowView {
 private final class ProjectCellView: NSTableCellView {
 
     private let glyphView = NSImageView()
+    /// Overlays the glyph slot as a "Cloning…" progress spinner (hidden when stopped).
+    private let spinner = NSProgressIndicator()
     private let toolIconView = NSImageView()
     private let nameLabel: NSTextField
     private let pinButton: NSButton
@@ -1091,6 +1101,12 @@ private final class ProjectCellView: NSTableCellView {
         glyphView.imageScaling = .scaleProportionallyDown
         glyphView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(glyphView)
+
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(spinner)
 
         toolIconView.imageScaling = .scaleProportionallyDown
         toolIconView.translatesAutoresizingMaskIntoConstraints = false
@@ -1117,6 +1133,9 @@ private final class ProjectCellView: NSTableCellView {
             glyphView.widthAnchor.constraint(equalToConstant: 15),
             glyphView.heightAnchor.constraint(equalToConstant: 15),
 
+            spinner.centerXAnchor.constraint(equalTo: glyphView.centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: glyphView.centerYAnchor),
+
             toolIconView.leadingAnchor.constraint(equalTo: glyphView.trailingAnchor, constant: 7),
             toolIconView.centerYAnchor.constraint(equalTo: centerYAnchor),
             toolIconWidth,
@@ -1141,9 +1160,27 @@ private final class ProjectCellView: NSTableCellView {
                    customGlyph: String? = nil, isHibernated: Bool = false, isScratch: Bool = false,
                    isClone: Bool = false,
                    isHome: Bool = false,
+                   isPendingClone: Bool = false,
                    projectIndex: Int, target: AnyObject, action: Selector) {
-        nameLabel.stringValue = name
         glyphLeading.constant = isClone ? 18 : 4
+
+        // A pending clone is a transient "Cloning…" placeholder: dim label, a
+        // progress spinner in place of the glyph, and no tool logo or pin star.
+        if isPendingClone {
+            nameLabel.stringValue = "Cloning \(name)\u{2026}"
+            nameLabel.textColor = ZTheme.current.fg3Color
+            glyphView.image = nil
+            toolIconView.image = nil
+            toolIconWidth.constant = 0
+            toolIconGap.constant = 0
+            pinButton.isHidden = true
+            spinner.startAnimation(nil)
+            return
+        }
+        // Recycled cells may have been a spinner row — stop it.
+        spinner.stopAnimation(nil)
+
+        nameLabel.stringValue = name
         // Hibernated rows read as dormant: dim text regardless of active state.
         nameLabel.textColor = isHibernated ? ZTheme.current.fg3Color
             : (isActive ? ZTheme.current.fgColor : ZTheme.current.fg2Color)
