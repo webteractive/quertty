@@ -15,11 +15,16 @@ public final class ProjectRuntime {
     /// The permanent, non-removable Home project: seeded by default, lives in
     /// its own top sidebar section, can be hibernated but never removed.
     public let isHome: Bool
+    /// Canonical rootPath of the project this one was cloned from, or nil for
+    /// a normal project. A clone lives in a zetty-owned directory under
+    /// ~/.zetty/clones and renders glued to its source in the sidebar.
+    public let cloneSource: String?
     public let tabList: TabList
 
     public init(id: UUID = UUID(), name: String, rootPath: String,
                 isPinned: Bool = false, isHibernated: Bool = false,
-                isScratch: Bool = false, isHome: Bool = false, tabList: TabList? = nil) {
+                isScratch: Bool = false, isHome: Bool = false, cloneSource: String? = nil,
+                tabList: TabList? = nil) {
         self.id = id
         self.name = name
         self.rootPath = rootPath
@@ -27,6 +32,7 @@ public final class ProjectRuntime {
         self.isHibernated = isHibernated
         self.isScratch = isScratch
         self.isHome = isHome
+        self.cloneSource = cloneSource
         // Default the project's tab list to open terminals in the project root.
         self.tabList = tabList ?? TabList(defaultWorkingDir: rootPath)
     }
@@ -104,6 +110,24 @@ public final class WorkspaceModel {
         return p
     }
 
+    /// Adds a clone project (an isolated copy of `cloneSource`'s directory).
+    /// Background by default — an orchestrating agent spins up N clones without
+    /// stealing focus; `makeActive` switches to it.
+    @discardableResult
+    public func addCloneProject(name: String, rootPath: String, cloneSource: String,
+                                makeActive: Bool = false) -> ProjectRuntime {
+        let p = ProjectRuntime(name: name, rootPath: rootPath, cloneSource: cloneSource)
+        projects.append(p)
+        if makeActive { activeIndex = projects.count - 1 }
+        regroup()   // slots the clone in right after its source
+        return p
+    }
+
+    /// The clones of `source`, in sidebar order.
+    public func clones(of source: ProjectRuntime) -> [ProjectRuntime] {
+        projects.filter { $0.cloneSource == source.rootPath }
+    }
+
     /// A unique scratch name: "scratch", then "scratch 2", "scratch 3", …
     private func nextScratchName() -> String {
         let existing = Set(projects.filter(\.isScratch).map(\.name))
@@ -178,16 +202,28 @@ public final class WorkspaceModel {
         projects[index].name = newName
     }
 
-    /// Enforces the only ordering invariant: pinned projects come before
-    /// unpinned ones. Within each group the existing relative order is preserved
-    /// (manual order), because `filter` is stable. The active project is
-    /// preserved by identity so `activeIndex` keeps pointing at the same project.
+    /// Enforces the ordering invariants: pinned projects come before unpinned
+    /// ones, and each clone sits immediately after its source project (so the
+    /// sidebar renders it attached). Within each group the existing relative
+    /// order is preserved (`filter` is stable). Orphaned clones (source removed)
+    /// stay where the base grouping puts them, as ordinary rows. The active
+    /// project is preserved by identity.
     private func regroup() {
         guard !projects.isEmpty else { return }
         let activeID = projects[activeIndex].id
-        projects = projects.filter(\.isHome)
+        let base = projects.filter(\.isHome)
             + projects.filter { !$0.isHome && $0.isPinned }
             + projects.filter { !$0.isHome && !$0.isPinned }
+        let sourcePaths = Set(base.filter { $0.cloneSource == nil }.map(\.rootPath))
+        let attached = base.filter { p in p.cloneSource.map(sourcePaths.contains) == true }
+        var result: [ProjectRuntime] = []
+        for p in base where !attached.contains(where: { $0.id == p.id }) {
+            result.append(p)
+            if p.cloneSource == nil {
+                result += attached.filter { $0.cloneSource == p.rootPath }
+            }
+        }
+        projects = result
         activeIndex = projects.firstIndex { $0.id == activeID } ?? 0
     }
 }

@@ -49,6 +49,7 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
     public var preserveSessions: Bool
     public var isHibernated: Bool
     public var isHome: Bool
+    public var cloneSource: String?
     public var sessions: [Session]
 
     public init(
@@ -60,6 +61,7 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         preserveSessions: Bool = false,
         isHibernated: Bool = false,
         isHome: Bool = false,
+        cloneSource: String? = nil,
         sessions: [Session] = []
     ) {
         self.id = id
@@ -70,11 +72,12 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         self.preserveSessions = preserveSessions
         self.isHibernated = isHibernated
         self.isHome = isHome
+        self.cloneSource = cloneSource
         self.sessions = sessions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, rootPath, isPinned, sortOrder, preserveSessions, isHibernated, isHome, sessions
+        case id, name, rootPath, isPinned, sortOrder, preserveSessions, isHibernated, isHome, cloneSource, sessions
     }
 
     /// Tolerant decode so workspace.json files written before a field existed
@@ -89,6 +92,7 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         preserveSessions = try c.decodeIfPresent(Bool.self, forKey: .preserveSessions) ?? false
         isHibernated = try c.decodeIfPresent(Bool.self, forKey: .isHibernated) ?? false
         isHome = try c.decodeIfPresent(Bool.self, forKey: .isHome) ?? false
+        cloneSource = try c.decodeIfPresent(String.self, forKey: .cloneSource)
         sessions = try c.decodeIfPresent([Session].self, forKey: .sessions) ?? []
     }
 }
