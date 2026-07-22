@@ -269,6 +269,23 @@ or merge back into the source. It becomes the `topGuide` for the content, so it
 shows above the terminal AND the hibernation placeholder; it's recreated per
 rebuild, so it appears/disappears automatically as the active project switches.
 
+Clones can be brought back in sync with their source without leaving the
+clone: pure readiness classification and copy-paste guide text live in
+`CloneSupport` (`updateReadiness` — `.notGit`/`.cloneDirty`/`.ready` — and
+`syncGuide`, plus the fetch/merge/conflict-files git arg builders); the
+app-layer `CloneRunner.updateFromSource` runs source → clone (`git fetch
+<source> HEAD` into `FETCH_HEAD`, then `git merge --no-edit FETCH_HEAD`) and
+**leaves conflicts in the clone** to resolve rather than aborting — nothing is
+lost, the user commits and PRs from there. The `CloneWarningBanner`'s "How do I
+merge this back?" button (git clones only — hidden when `clonePath`/`sourcePath`
+are nil) opens an `NSPopover` hosting `CloneMergeGuideView` with the update /
+PR / no-origin-local-merge steps filled in with the clone's real branch and
+paths. The sidebar context menu's **"Update from Source"** action and the CLI
+`update-clone <name>` verb both drive the same `CloneRunner.updateFromSource`;
+`update-clone` is routed as a **slow verb** alongside `clone`/`capture`/`quit`/
+`removeProject` (plan on main via `TerminalViewController.planUpdateClone`,
+merge off the socket queue, outcome text/error returned to the CLI).
+
 ### `ssh://` URL handover
 
 Zetty is a registered macOS `ssh://` handler (`CFBundleURLTypes` in
