@@ -1780,8 +1780,12 @@ final class TerminalViewController: NSViewController {
     /// confirm it is a clone whose source directory still exists.
     func planUpdateClone(name: String) -> UpdateClonePlan {
         let needle = name.lowercased()
-        guard let clone = workspace.projects.first(where: { $0.name.lowercased() == needle }) else {
+        let matches = workspace.projects.filter { $0.name.lowercased() == needle }
+        guard let clone = matches.first else {
             return .failed("no project named \"\(name)\"")
+        }
+        guard matches.count == 1 else {
+            return .failed("\(matches.count) projects named \"\(name)\" — update it via the sidebar")
         }
         guard let sourceRoot = clone.cloneSource else {
             return .failed("\"\(clone.name)\" is not a clone")
