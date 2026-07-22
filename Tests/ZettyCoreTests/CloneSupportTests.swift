@@ -129,3 +129,48 @@ import Foundation
     #expect(!summary.contains("cp: error line 13"))
     #expect(summary.hasSuffix("… and 28 more errors"))
 }
+
+// MARK: - Update-from-source readiness
+
+@Test func updateReadinessNonGit() {
+    #expect(CloneSupport.updateReadiness(isCloneGitWorkTree: false, isSourceGitWorkTree: true,
+                                         cloneDirty: false) == .notGit)
+    #expect(CloneSupport.updateReadiness(isCloneGitWorkTree: true, isSourceGitWorkTree: false,
+                                         cloneDirty: false) == .notGit)
+}
+
+@Test func updateReadinessDirtyCloneRefused() {
+    #expect(CloneSupport.updateReadiness(isCloneGitWorkTree: true, isSourceGitWorkTree: true,
+                                         cloneDirty: true) == .cloneDirty)
+}
+
+@Test func updateReadinessReadyWhenCleanGitClone() {
+    #expect(CloneSupport.updateReadiness(isCloneGitWorkTree: true, isSourceGitWorkTree: true,
+                                         cloneDirty: false) == .ready)
+}
+
+// MARK: - Update arg builders
+
+@Test func updateArgBuilders() {
+    #expect(CloneSupport.updateFetchArgs(sourcePath: "/s") == ["fetch", "/s", "HEAD"])
+    #expect(CloneSupport.alreadyCurrentArgs == ["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"])
+    #expect(CloneSupport.updateMergeArgs == ["merge", "--no-edit", "FETCH_HEAD"])
+    #expect(CloneSupport.conflictFilesArgs == ["diff", "--name-only", "--diff-filter=U"])
+    #expect(CloneSupport.isGitWorkTreeArgs() == ["rev-parse", "--is-inside-work-tree"])
+    #expect(CloneSupport.cloneStatusArgs() == ["status", "--porcelain"])
+}
+
+// MARK: - Sync guide
+
+@Test func syncGuideBuildsAllPaths() {
+    let g = CloneSupport.syncGuide(branch: "fork-1", clonePath: "/clone",
+                                   sourcePath: "/src", defaultBranch: "main")
+    #expect(g.branch == "fork-1")
+    #expect(g.updateStep == "git fetch /src HEAD && git merge FETCH_HEAD   # or use “Update from Source”")
+    #expect(g.prSteps == ["git push -u origin fork-1",
+                          "Open a pull request against main."])
+    #expect(g.localFallbackSteps == ["cd /src",
+                                     "git fetch /clone fork-1",
+                                     "git switch main",
+                                     "git merge fork-1"])
+}

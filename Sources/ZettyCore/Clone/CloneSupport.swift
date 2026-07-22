@@ -41,6 +41,13 @@ public enum CloneWorkState: Equatable, Sendable {
     case dirty(unfetched: Bool)    // uncommitted changes (possibly plus unfetched commits)
 }
 
+/// Whether the source's latest can be auto-merged INTO the clone right now.
+public enum UpdateReadiness: Equatable, Sendable {
+    case notGit      // clone or source is not a git work tree
+    case cloneDirty  // clone has uncommitted changes — commit before pulling source in
+    case ready
+}
+
 /// Pure planning + parsing for project clones. Process spawning (`cp`, `git`)
 /// lives in the app layer (`CloneRunner`) — same split as `GitStatus`.
 public enum CloneSupport {
@@ -191,5 +198,57 @@ public enum CloneSupport {
         let root = clonesRoot(home: home)
         let normalized = (path as NSString).standardizingPath
         return normalized.hasPrefix(root + "/") && normalized != root
+    }
+
+    // MARK: - Update from source (source → clone)
+
+    /// `.ready` iff both clone and source are git work trees and the clone's
+    /// working tree is clean (a merge would otherwise be refused / risk local work).
+    public static func updateReadiness(isCloneGitWorkTree: Bool, isSourceGitWorkTree: Bool,
+                                       cloneDirty: Bool) -> UpdateReadiness {
+        guard isCloneGitWorkTree, isSourceGitWorkTree else { return .notGit }
+        return cloneDirty ? .cloneDirty : .ready
+    }
+
+    public static func isGitWorkTreeArgs() -> [String] { ["rev-parse", "--is-inside-work-tree"] }
+    public static func cloneStatusArgs() -> [String] { ["status", "--porcelain"] }
+    /// Fetch the SOURCE's current branch tip into FETCH_HEAD (no named refspec).
+    public static func updateFetchArgs(sourcePath: String) -> [String] { ["fetch", sourcePath, "HEAD"] }
+    /// Exit 0 iff the fetched source tip is already an ancestor of the clone (up to date).
+    public static var alreadyCurrentArgs: [String] { ["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"] }
+    public static var updateMergeArgs: [String] { ["merge", "--no-edit", "FETCH_HEAD"] }
+    public static var conflictFilesArgs: [String] { ["diff", "--name-only", "--diff-filter=U"] }
+
+    /// Copy-pasteable steps for the feature-branch flow: update from source, PR
+    /// (primary), and a no-origin local merge-into-source fallback.
+    public struct SyncGuide: Equatable, Sendable {
+        public let branch: String
+        public let updateStep: String
+        public let prSteps: [String]
+        public let localFallbackSteps: [String]
+        public init(branch: String, updateStep: String, prSteps: [String], localFallbackSteps: [String]) {
+            self.branch = branch
+            self.updateStep = updateStep
+            self.prSteps = prSteps
+            self.localFallbackSteps = localFallbackSteps
+        }
+    }
+
+    public static func syncGuide(branch: String, clonePath: String, sourcePath: String,
+                                 defaultBranch: String) -> SyncGuide {
+        SyncGuide(
+            branch: branch,
+            updateStep: "git fetch \(sourcePath) HEAD && git merge FETCH_HEAD"
+                + "   # or use “Update from Source”",
+            prSteps: [
+                "git push -u origin \(branch)",
+                "Open a pull request against \(defaultBranch).",
+            ],
+            localFallbackSteps: [
+                "cd \(sourcePath)",
+                "git fetch \(clonePath) \(branch)",
+                "git switch \(defaultBranch)",
+                "git merge \(branch)",
+            ])
     }
 }
