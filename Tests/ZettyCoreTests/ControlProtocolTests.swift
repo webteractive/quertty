@@ -183,3 +183,9 @@ private let panes: [StatusSnapshot.Pane] = [
     #expect(ControlCLI.recognizes(["clone"]))
     #expect(ControlCLI.recognizes(["clone", "--project", "zetty"]))
 }
+
+@Test func updateCloneRequestRoundTrips() throws {
+    let line = try ControlWire.encodeLine(.updateClone(name: "zetty/fork-1"))
+    let decoded = try ControlWire.decodeRequest(line)
+    #expect(decoded == .updateClone(name: "zetty/fork-1"))
+}

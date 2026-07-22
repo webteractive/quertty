@@ -34,6 +34,10 @@ public enum ControlRequest: Equatable, Sendable {
     /// default; `focus` switches to it. Response `.pane` with the clone's
     /// first pane's short id.
     case cloneProject(project: String?, name: String?, focus: Bool)
+    /// Merge the named clone's SOURCE branch into the clone (update the clone;
+    /// leave conflicts in the clone to resolve). Response `.text` with a
+    /// summary, or `.error` for a refusal/failure.
+    case updateClone(name: String)
     /// Remove the named project (case-insensitive), closing all of its
     /// tabs/panes and ending their zmx sessions (no confirmation dialog —
     /// the CLI call IS the confirmation). The last project can't be removed.
@@ -111,6 +115,8 @@ extension ControlRequest: Codable {
                 name: try container.decodeIfPresent(String.self, forKey: .name),
                 focus: try container.decodeIfPresent(Bool.self, forKey: .focus) ?? false
             )
+        case "update-clone":
+            self = .updateClone(name: try container.decode(String.self, forKey: .project))
         case "remove-project":
             self = .removeProject(
                 name: try container.decode(String.self, forKey: .project),
@@ -190,6 +196,9 @@ extension ControlRequest: Codable {
             try container.encodeIfPresent(project, forKey: .project)
             try container.encodeIfPresent(name, forKey: .name)
             try container.encode(focus, forKey: .focus)
+        case .updateClone(let name):
+            try container.encode("update-clone", forKey: .command)
+            try container.encode(name, forKey: .project)
         case .removeProject(let name, let fetch, let discard):
             try container.encode("remove-project", forKey: .command)
             try container.encode(name, forKey: .project)

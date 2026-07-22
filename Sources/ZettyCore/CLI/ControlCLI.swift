@@ -43,6 +43,9 @@ public enum ControlCLI {
                                               ~/.zetty/clones, in the background;
                                               --focus switches to it. Prints the
                                               clone's first pane id
+      zetty update-clone <name>               merge the clone's SOURCE branch into
+                                              the clone (update it); leaves any
+                                              conflicts in the clone to resolve
       zetty remove-project <name> [--fetch | --discard]
                                               remove a project (closes its tabs and
                                               ends their sessions; no confirmation).
@@ -98,7 +101,7 @@ public enum ControlCLI {
     /// binary to decide CLI mode vs. launching the GUI).
     public static func recognizes(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
-        return ["status", "ls", "send", "capture", "new-tab", "add-project", "new-project", "clone",
+        return ["status", "ls", "send", "capture", "new-tab", "add-project", "new-project", "clone", "update-clone",
                 "remove-project", "hibernate", "wake", "split", "break", "focus", "close", "reload",
                 "scratch", "scratch-clear", "quit",
                 "help", "--help", "-h"].contains(first)
@@ -130,6 +133,8 @@ public enum ControlCLI {
             return runNewProject(arguments)
         case "clone":
             return runClone(arguments)
+        case "update-clone":
+            return runUpdateClone(arguments)
         case "remove-project":
             return runRemoveProject(arguments)
         case "hibernate":
@@ -380,6 +385,24 @@ public enum ControlCLI {
             index += 1
         }
         return expectPane(.cloneProject(project: project, name: name, focus: focus))
+    }
+
+    private static func runUpdateClone(_ arguments: [String]) -> Int32 {
+        if arguments.contains("--help") || arguments.contains("-h") {
+            print(usage)
+            return 0
+        }
+        let name = arguments.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else {
+            return failure("update-clone needs a clone name")
+        }
+        switch roundTrip(.updateClone(name: name)) {
+        case .text(let summary):
+            print(summary)
+            return 0
+        case .error(let message): return failure(message)
+        default: return failure("unexpected response")
+        }
     }
 
     private static func runRemoveProject(_ arguments: [String]) -> Int32 {
