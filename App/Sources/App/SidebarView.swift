@@ -122,6 +122,9 @@ final class SidebarView: NSView {
     /// Called with the project index for the context menu's "Clone Project…".
     var onCloneProject: ((Int) -> Void)?
 
+    /// Called with the project index for the context menu's "Update from Source".
+    var onUpdateClone: ((Int) -> Void)?
+
     /// Called with the project index for the context menu's "Rename…".
     var onRenameProject: ((Int) -> Void)?
     var onToggleHibernate: ((Int) -> Void)?
@@ -619,6 +622,12 @@ final class SidebarView: NSView {
         onCloneProject?(projectIndex)
     }
 
+    @objc private func updateCloneMenuClicked(_ sender: NSMenuItem) {
+        let projectIndex = sender.tag
+        guard projects.indices.contains(projectIndex) else { return }
+        onUpdateClone?(projectIndex)
+    }
+
     @objc private func hibernateMenuClicked(_ sender: NSMenuItem) {
         let projectIndex = sender.tag
         guard projects.indices.contains(projectIndex) else { return }
@@ -689,6 +698,15 @@ extension SidebarView: NSMenuDelegate {
                 clone.target = self
                 clone.tag = p
                 menu.addItem(clone)
+            }
+
+            if projects[p].isClone {
+                let update = NSMenuItem(title: "Update from Source",
+                                        action: #selector(updateCloneMenuClicked(_:)),
+                                        keyEquivalent: "")
+                update.target = self
+                update.tag = p
+                menu.addItem(update)
             }
         }
 

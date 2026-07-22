@@ -536,6 +536,10 @@ final class TerminalViewController: NSViewController {
             self?.promptCloneProject(at: index)
         }
 
+        sidebar.onUpdateClone = { [weak self] index in
+            self?.confirmUpdateClone(at: index)
+        }
+
         sidebar.onRenameProject = { [weak self] index in
             guard let self, self.workspace.projects.indices.contains(index) else { return }
             self.onRenameProject?(self.workspace.projects[index])
@@ -2595,6 +2599,71 @@ final class TerminalViewController: NSViewController {
         } else {
             complete(alert.runModal())
         }
+    }
+
+    // MARK: - Update Clone from Source
+
+    /// Confirms, then merges the source's latest branch into the clone
+    /// (leave-conflicts, off-main). Nothing is deleted; conflicts are left in
+    /// the clone to resolve.
+    private func confirmUpdateClone(at index: Int) {
+        guard workspace.projects.indices.contains(index) else { return }
+        let clone = workspace.projects[index]
+        guard let sourceRoot = clone.cloneSource else { return }
+        let cloneRoot = clone.rootPath
+        let cloneName = clone.name
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Update “\(cloneName)” from its source?"
+        alert.informativeText = "Merges the source's latest branch into this clone so it's "
+            + "current. Any conflicts are left in the clone for you to resolve, then commit and "
+            + "open a PR. Commit your clone changes first — a dirty clone is refused."
+        alert.addButton(withTitle: "Update")
+        alert.addButton(withTitle: "Cancel")
+
+        let run: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let outcome = CloneRunner.updateFromSource(cloneRoot: cloneRoot, sourceRoot: sourceRoot)
+                DispatchQueue.main.async { self.presentUpdateOutcome(outcome, cloneName: cloneName) }
+            }
+        }
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: run)
+        } else {
+            run(alert.runModal())
+        }
+    }
+
+    private func presentUpdateOutcome(_ outcome: CloneRunner.UpdateOutcome, cloneName: String) {
+        let alert = NSAlert()
+        switch outcome {
+        case .updated(let summary):
+            alert.alertStyle = .informational
+            alert.messageText = "Updated “\(cloneName)” from its source"
+            alert.informativeText = summary
+        case .upToDate:
+            alert.alertStyle = .informational
+            alert.messageText = "Already up to date"
+            alert.informativeText = "“\(cloneName)” already contains the source's latest."
+        case .conflicts(let files):
+            alert.alertStyle = .warning
+            alert.messageText = "Merge conflicts to resolve"
+            alert.informativeText = "The merge is in progress in the clone. Resolve these files "
+                + "there, then commit and open a PR:\n" + files.joined(separator: "\n")
+        case .refused(let message):
+            alert.alertStyle = .warning
+            alert.messageText = "Nothing updated"
+            alert.informativeText = message
+        case .failed(let message):
+            alert.alertStyle = .critical
+            alert.messageText = "Update failed"
+            alert.informativeText = message
+        }
+        alert.addButton(withTitle: "OK")
+        if let window = view.window { alert.beginSheetModal(for: window, completionHandler: nil) }
+        else { alert.runModal() }
     }
 
     // MARK: - Tab actions (responder-chain targets)
