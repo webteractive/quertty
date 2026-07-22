@@ -1767,6 +1767,28 @@ final class TerminalViewController: NSViewController {
         return nil
     }
 
+    enum UpdateClonePlan {
+        case ready(cloneRoot: String, sourceRoot: String)
+        case failed(String)
+    }
+
+    /// Main-thread planning for `update-clone`: resolve the named clone and
+    /// confirm it is a clone whose source directory still exists.
+    func planUpdateClone(name: String) -> UpdateClonePlan {
+        let needle = name.lowercased()
+        guard let clone = workspace.projects.first(where: { $0.name.lowercased() == needle }) else {
+            return .failed("no project named \"\(name)\"")
+        }
+        guard let sourceRoot = clone.cloneSource else {
+            return .failed("\"\(clone.name)\" is not a clone")
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: sourceRoot, isDirectory: &isDir), isDir.boolValue else {
+            return .failed("the source directory is gone (\(sourceRoot)) — cannot update")
+        }
+        return .ready(cloneRoot: clone.rootPath, sourceRoot: sourceRoot)
+    }
+
     /// Closes the targeted pane (CLI `close`): the pane collapses into its
     /// split; a tab's last pane — or `wholeTab` — closes the tab. Selects the
     /// owning project/tab first so the standard close paths (and their zmx

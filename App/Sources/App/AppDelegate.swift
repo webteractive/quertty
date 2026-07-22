@@ -1186,6 +1186,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         return .ok
                     }
                 }
+            case .updateClone(let name):
+                let planned = DispatchQueue.main.sync { () -> TerminalViewController.UpdateClonePlan in
+                    guard let tvc = self.terminalViewController else {
+                        return .failed("Zetty is still starting up")
+                    }
+                    return tvc.planUpdateClone(name: name)
+                }
+                switch planned {
+                case .failed(let message):
+                    return .error(message)
+                case .ready(let cloneRoot, let sourceRoot):
+                    switch CloneRunner.updateFromSource(cloneRoot: cloneRoot, sourceRoot: sourceRoot) {
+                    case .updated(let summary):
+                        return .text(summary)
+                    case .upToDate:
+                        return .text("already up to date with the source")
+                    case .conflicts(let files):
+                        return .error("merge conflicts left in the clone — resolve them there, then "
+                            + "commit and PR. Conflicting files:\n" + files.joined(separator: "\n"))
+                    case .refused(let message):
+                        return .error(message)
+                    case .failed(let message):
+                        return .error(message)
+                    }
+                }
             default:
                 return DispatchQueue.main.sync { self.handleOnMain(request) }
             }
@@ -1256,7 +1281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return .error(message)
             }
             return .ok
-        case .capture, .quit, .cloneProject, .removeProject:
+        case .capture, .quit, .cloneProject, .removeProject, .updateClone:
             // Slow verbs — handled on the socket queue in startControlSocket.
             return .error("internal: slow verb routed to the main handler")
         }
