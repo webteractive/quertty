@@ -84,6 +84,28 @@ enum CloneRunner {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Runs `git -C <directory> <args>`, returning the exit status and combined
+    /// stdout+stderr (trimmed) — used where the merge summary/conflict text matters.
+    static func runGitResult(_ args: [String], in directory: String) -> (status: Int32, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory] + args
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch { return (-1, error.localizedDescription) }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let text = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return (process.terminationStatus, text)
+    }
+
+    /// True iff `git -C <directory> <args>` exits 0 (for predicate git commands).
+    static func gitSucceeds(_ args: [String], in directory: String) -> Bool {
+        runGitResult(args, in: directory).status == 0
+    }
+
     // MARK: - Removal
 
     /// What deleting the clone at `cloneRoot` would lose. Blocking (spawns git).
@@ -108,6 +130,57 @@ enum CloneRunner {
     /// nil on success; an error message on failure (nothing is deleted then).
     static func fetchBack(sourceRoot: String, clonePath: String, branch: String) -> String? {
         runGit(CloneSupport.fetchBackArgs(clonePath: clonePath, branch: branch), in: sourceRoot)
+    }
+
+    // MARK: - Update from source (source → clone)
+
+    enum UpdateOutcome: Equatable {
+        case updated(summary: String)  // source's latest merged into the clone cleanly
+        case upToDate                  // clone already contains the source tip
+        case conflicts(files: [String])// merge left in progress in the clone to resolve
+        case refused(String)           // notGit / cloneDirty
+        case failed(String)            // fetch/merge failed otherwise
+    }
+
+    /// Merges the SOURCE's current branch tip into the CLONE (leave-conflicts).
+    /// Blocking — run off-main. Nothing is deleted; on conflict the clone is left
+    /// mid-merge for the user to resolve, then commit + PR.
+    static func updateFromSource(cloneRoot: String, sourceRoot: String) -> UpdateOutcome {
+        let isCloneGit = (runGitOutput(CloneSupport.isGitWorkTreeArgs(), in: cloneRoot)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) == "true")
+        let isSourceGit = (runGitOutput(CloneSupport.isGitWorkTreeArgs(), in: sourceRoot)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) == "true")
+        let cloneDirty = GitStatus.parseChangeCount(
+            runGitOutput(CloneSupport.cloneStatusArgs(), in: cloneRoot) ?? "") > 0
+
+        switch CloneSupport.updateReadiness(isCloneGitWorkTree: isCloneGit,
+                                            isSourceGitWorkTree: isSourceGit, cloneDirty: cloneDirty) {
+        case .notGit:
+            return .refused("clone or source is not a git repository — nothing to update")
+        case .cloneDirty:
+            return .refused("clone has uncommitted changes — commit them first, then update")
+        case .ready:
+            break
+        }
+
+        if let fetchError = runGit(CloneSupport.updateFetchArgs(sourcePath: sourceRoot), in: cloneRoot) {
+            return .failed("fetch from source failed — nothing changed: \(fetchError)")
+        }
+        if gitSucceeds(CloneSupport.alreadyCurrentArgs, in: cloneRoot) {
+            return .upToDate
+        }
+        let result = runGitResult(CloneSupport.updateMergeArgs, in: cloneRoot)
+        if result.status == 0 {
+            let summary = result.output.split(separator: "\n").first.map(String.init) ?? "updated"
+            return .updated(summary: summary)
+        }
+        // Merge failed. If it's a conflict, LEAVE it in the clone to resolve.
+        let conflicts = (runGitOutput(CloneSupport.conflictFilesArgs, in: cloneRoot) ?? "")
+            .split(separator: "\n").map(String.init).filter { !$0.isEmpty }
+        if !conflicts.isEmpty { return .conflicts(files: conflicts) }
+        // Non-conflict failure — abort so the clone isn't left half-merged.
+        _ = runGit(["merge", "--abort"], in: cloneRoot)
+        return .failed("update failed and was aborted: \(result.output)")
     }
 
     /// The clone's current branch — the branch its work actually lives on.
