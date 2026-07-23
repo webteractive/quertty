@@ -199,10 +199,13 @@ final class FileCopyBackSheet: NSObject, NSTableViewDataSource, NSTableViewDeleg
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let s = String(line)
             let color: NSColor
-            if s.hasPrefix("+") { color = ZTheme.current.greenColor }
+            // Meta/header lines first, so git's "---"/"+++" file markers don't
+            // get mistaken for removed/added content lines.
+            if s.hasPrefix("@@") { color = ZTheme.current.accentColor }
+            else if s.hasPrefix("diff ") || s.hasPrefix("index ")
+                || s.hasPrefix("--- ") || s.hasPrefix("+++ ") { color = ZTheme.current.fg3Color }
+            else if s.hasPrefix("+") { color = ZTheme.current.greenColor }
             else if s.hasPrefix("-") { color = ZTheme.current.redColor }
-            else if s.hasPrefix("@@") { color = ZTheme.current.accentColor }
-            else if s.hasPrefix("diff ") || s.hasPrefix("index ") { color = ZTheme.current.fg3Color }
             else { color = ZTheme.current.fg2Color }
             result.append(NSAttributedString(string: s + "\n",
                 attributes: [.font: mono, .foregroundColor: color]))
