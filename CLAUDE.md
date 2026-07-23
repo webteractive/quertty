@@ -280,11 +280,26 @@ lost, the user commits and PRs from there. The `CloneWarningBanner`'s "How do I
 merge this back?" button (git clones only — hidden when `clonePath`/`sourcePath`
 are nil) opens an `NSPopover` hosting `CloneMergeGuideView` with the update /
 PR / no-origin-local-merge steps filled in with the clone's real branch and
-paths. The sidebar context menu's **"Update from Source"** action and the CLI
-`update-clone <name>` verb both drive the same `CloneRunner.updateFromSource`;
-`update-clone` is routed as a **slow verb** alongside `clone`/`capture`/`quit`/
-`removeProject` (plan on main via `TerminalViewController.planUpdateClone`,
-merge off the socket queue, outcome text/error returned to the CLI).
+paths, plus a pointer to the automated chooser below.
+
+The sidebar context menu's **"Merge to Source…"** action
+(`confirmMergeToSource`) probes the source's git/remote state off-main
+(`CloneRunner.isGitWorkTree`/`hasRemote`) into the pure
+`CloneSupport.mergeToSourceOptions` (`MergeToSourceOptions.canMergeUpdates`/
+`canPushToBranch` — the latter requires a remote), then shows an alert
+offering **Merge updates** (`CloneRunner.mergeUpdates` — reuses
+`updateFromSource` for the sync step, then fetches the clone into the SOURCE
+and merges there locally; refuses on a dirty source, and aborts cleanly
+leaving the source untouched if that merge conflicts) and, when available,
+**Push to branch** (`CloneRunner.pushBranch` — same sync step, then `git push
+-u origin <branch>` from the clone for a PR). A non-git source shows a
+"coming soon" placeholder instead — file copy-back is Phase 2. The CLI
+`update-clone <name>` verb is UNCHANGED: it still drives only the shared sync
+step (`CloneRunner.updateFromSource`) and is routed as a **slow verb**
+alongside `clone`/`capture`/`quit`/`removeProject` (plan on main via
+`TerminalViewController.planUpdateClone`, merge off the socket queue, outcome
+text/error returned to the CLI) — the GUI's Merge updates/Push to branch
+strategies are not exposed to the CLI in Phase 1.
 
 ### `ssh://` URL handover
 

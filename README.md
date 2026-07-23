@@ -404,20 +404,32 @@ written into the repo). The CLI (`zetty new-tab` / `split`) never prompts.
 A clone's `.git` is a full copy of the source, so it carries the source's
 `main` and the same `origin`. Your clone's work lives on its own branch
 `<name>` — **don't push the clone's `main`** (that just creates two divergent
-`main`s). The feature-branch flow:
+`main`s). Right-click the clone → **Merge to Source…** for an adaptive
+chooser. It always starts by updating the clone from the source (resolving
+any conflicts *in the clone* — if it stops there, resolve + commit, then
+re-run "Merge to Source…"), then offers:
 
-1. **Update from source.** Merge the source's latest branch into the clone so
-   it's current, resolving any conflicts *in the clone*. Right-click the clone →
-   *Update from Source*, or run `zetty update-clone <name>`. It refuses a dirty
-   clone (commit first) and, on conflict, leaves the merge in progress in the
-   clone for you to resolve.
-2. **Push and open a PR** (primary): `git push -u origin <name>`, then open a
-   pull request against the source's default branch.
-3. **No origin? Merge locally into the source instead:** in the source repo,
-   `git fetch <clonePath> <name>` then `git switch main` and `git merge <name>`.
+- **Merge updates** — merges the clone's work into the source **locally**
+  (fetches the clone into the source repo and merges there); no remote
+  needed. Refuses if the source has uncommitted changes, and if the merge
+  into the source conflicts it aborts cleanly, leaving the source untouched.
+- **Push to branch** — pushes the clone's branch to `origin` so you can open
+  a pull request against the source's default branch. Only offered when the
+  clone has a remote.
 
-The clone banner's **"How do I merge this back?"** button shows these steps with
-your clone's real branch and paths filled in (git clones only).
+If the clone's source isn't a git repository, the dialog explains that
+bringing changes back for non-git projects (a file diff + copy-back) is
+coming soon, rather than offering either strategy.
+
+`zetty update-clone <name>` still runs just that first sync step — merging
+the source's latest into the clone and leaving conflicts in place to
+resolve — the same step "Merge to Source…" runs before either strategy; it
+doesn't merge or push on its own.
+
+The clone banner's **"How do I merge this back?"** button shows the update /
+PR / no-origin-local-merge steps with your clone's real branch and paths
+filled in (git clones only), with a pointer to **Merge to Source…** for the
+one-click version.
 
 ### Updates
 
