@@ -33,8 +33,8 @@ final class CloneMergeGuideView: NSViewController {
             Self.steps(guide.prSteps),
             Self.heading("No origin? Merge locally into the source instead"),
             Self.steps(guide.localFallbackSteps),
-            Self.body("Tip: “Update from Source” (right-click the clone) does step 1 "
-                + "for you when the clone is clean."),
+            Self.body("Tip: “Merge to Source…” (right-click the clone) updates from the "
+                + "source and then merges your work back or pushes your branch for a PR."),
         ])
         stack.orientation = .vertical
         stack.alignment = .leading

@@ -536,8 +536,8 @@ final class TerminalViewController: NSViewController {
             self?.promptCloneProject(at: index)
         }
 
-        sidebar.onUpdateClone = { [weak self] index in
-            self?.confirmUpdateClone(at: index)
+        sidebar.onMergeToSource = { [weak self] index in
+            self?.confirmMergeToSource(at: index)
         }
 
         sidebar.onRenameProject = { [weak self] index in
@@ -2605,64 +2605,126 @@ final class TerminalViewController: NSViewController {
         }
     }
 
-    // MARK: - Update Clone from Source
+    // MARK: - Merge Clone to Source
 
-    /// Confirms, then merges the source's latest branch into the clone
-    /// (leave-conflicts, off-main). Nothing is deleted; conflicts are left in
-    /// the clone to resolve.
-    private func confirmUpdateClone(at index: Int) {
+    /// Probes the source's git/remote state off-main, then presents the
+    /// "Merge to Source…" chooser (Merge updates / Push to branch, per
+    /// availability) and runs the chosen strategy off-main. Nothing is deleted.
+    private func confirmMergeToSource(at index: Int) {
         guard workspace.projects.indices.contains(index) else { return }
         let clone = workspace.projects[index]
         guard let sourceRoot = clone.cloneSource else { return }
         let cloneRoot = clone.rootPath
         let cloneName = clone.name
-
-        let alert = NSAlert()
-        alert.alertStyle = .informational
-        alert.messageText = "Update “\(cloneName)” from its source?"
-        alert.informativeText = "Merges the source's latest branch into this clone so it's "
-            + "current. Any conflicts are left in the clone for you to resolve, then commit and "
-            + "open a PR. Commit your clone changes first — a dirty clone is refused."
-        alert.addButton(withTitle: "Update")
-        alert.addButton(withTitle: "Cancel")
-
-        let run: (NSApplication.ModalResponse) -> Void = { [weak self] response in
-            guard response == .alertFirstButtonReturn, let self else { return }
-            DispatchQueue.global(qos: .userInitiated).async {
-                let outcome = CloneRunner.updateFromSource(cloneRoot: cloneRoot, sourceRoot: sourceRoot)
-                DispatchQueue.main.async { self.presentUpdateOutcome(outcome, cloneName: cloneName) }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let options = CloneSupport.mergeToSourceOptions(
+                isCloneGit: CloneRunner.isGitWorkTree(in: cloneRoot),
+                isSourceGit: CloneRunner.isGitWorkTree(in: sourceRoot),
+                hasRemote: CloneRunner.hasRemote(in: cloneRoot))
+            DispatchQueue.main.async {
+                self?.presentMergeToSourceChooser(options: options, cloneRoot: cloneRoot,
+                                                  sourceRoot: sourceRoot, cloneName: cloneName)
             }
-        }
-        if let window = view.window {
-            alert.beginSheetModal(for: window, completionHandler: run)
-        } else {
-            run(alert.runModal())
         }
     }
 
-    private func presentUpdateOutcome(_ outcome: CloneRunner.UpdateOutcome, cloneName: String) {
+    private func presentMergeToSourceChooser(options: CloneSupport.MergeToSourceOptions,
+                                             cloneRoot: String, sourceRoot: String, cloneName: String) {
+        guard options.canMergeUpdates else {
+            // Non-git source — the file copy-back (diff modal) ships in Phase 2.
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Can't merge “\(cloneName)” to its source yet"
+            alert.informativeText = "This clone's source isn't a git repository. Bringing "
+                + "changes back for non-git projects (a file diff + copy-back) is coming soon."
+            alert.addButton(withTitle: "OK")
+            if let window = view.window { alert.beginSheetModal(for: window, completionHandler: nil) }
+            else { alert.runModal() }
+            return
+        }
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Merge “\(cloneName)” to its source?"
+        alert.informativeText = "First updates this clone from the source (resolve any conflicts "
+            + "in the clone, then re-run). Then:\n• Merge updates — merges the clone's work into "
+            + "the source locally.\n• Push to branch — pushes the clone's branch to the remote so "
+            + "you can open a PR."
+        alert.addButton(withTitle: "Merge updates")
+        if options.canPushToBranch { alert.addButton(withTitle: "Push to branch") }
+        alert.addButton(withTitle: "Cancel")
+
+        let run: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+            guard let self else { return }
+            if response == .alertFirstButtonReturn {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let outcome = CloneRunner.mergeUpdates(cloneRoot: cloneRoot, sourceRoot: sourceRoot)
+                    DispatchQueue.main.async { self.presentMergeBackOutcome(outcome, cloneName: cloneName) }
+                }
+            } else if options.canPushToBranch && response == .alertSecondButtonReturn {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let outcome = CloneRunner.pushBranch(cloneRoot: cloneRoot, sourceRoot: sourceRoot)
+                    DispatchQueue.main.async { self.presentPushOutcome(outcome, cloneName: cloneName) }
+                }
+            }
+            // otherwise Cancel — no-op
+        }
+        if let window = view.window { alert.beginSheetModal(for: window, completionHandler: run) }
+        else { run(alert.runModal()) }
+    }
+
+    private func presentMergeBackOutcome(_ outcome: CloneRunner.MergeBackOutcome, cloneName: String) {
         let alert = NSAlert()
         switch outcome {
-        case .updated(let summary):
+        case .merged(let summary):
             alert.alertStyle = .informational
-            alert.messageText = "Updated “\(cloneName)” from its source"
+            alert.messageText = "Merged “\(cloneName)” into its source"
             alert.informativeText = summary
-        case .upToDate:
-            alert.alertStyle = .informational
-            alert.messageText = "Already up to date"
-            alert.informativeText = "“\(cloneName)” already contains the source's latest."
-        case .conflicts(let files):
+        case .syncConflicts(let files):
             alert.alertStyle = .warning
-            alert.messageText = "Merge conflicts to resolve"
-            alert.informativeText = "The merge is in progress in the clone. Resolve these files "
-                + "there, then commit and open a PR:\n" + files.joined(separator: "\n")
+            alert.messageText = "Resolve conflicts in the clone first"
+            alert.informativeText = "Updating the clone from the source left conflicts. Resolve "
+                + "these in the clone and commit, then run Merge to Source again:\n"
+                + files.joined(separator: "\n")
+        case .sourceConflict(let files):
+            alert.alertStyle = .warning
+            alert.messageText = "Merge conflict in the source — nothing changed"
+            alert.informativeText = "The source repo is untouched. Resolve manually. Conflicting "
+                + "files:\n" + files.joined(separator: "\n")
         case .refused(let message):
             alert.alertStyle = .warning
-            alert.messageText = "Nothing updated"
+            alert.messageText = "Nothing merged"
             alert.informativeText = message
         case .failed(let message):
             alert.alertStyle = .critical
-            alert.messageText = "Update failed"
+            alert.messageText = "Merge failed"
+            alert.informativeText = message
+        }
+        alert.addButton(withTitle: "OK")
+        if let window = view.window { alert.beginSheetModal(for: window, completionHandler: nil) }
+        else { alert.runModal() }
+    }
+
+    private func presentPushOutcome(_ outcome: CloneRunner.PushOutcome, cloneName: String) {
+        let alert = NSAlert()
+        switch outcome {
+        case .pushed(let summary):
+            alert.alertStyle = .informational
+            alert.messageText = "Pushed “\(cloneName)” to its remote"
+            alert.informativeText = summary + "\n\nOpen a pull request to land it in the source."
+        case .syncConflicts(let files):
+            alert.alertStyle = .warning
+            alert.messageText = "Resolve conflicts in the clone first"
+            alert.informativeText = "Updating the clone from the source left conflicts. Resolve "
+                + "these in the clone and commit, then run Merge to Source again:\n"
+                + files.joined(separator: "\n")
+        case .refused(let message):
+            alert.alertStyle = .warning
+            alert.messageText = "Nothing pushed"
+            alert.informativeText = message
+        case .failed(let message):
+            alert.alertStyle = .critical
+            alert.messageText = "Push failed"
             alert.informativeText = message
         }
         alert.addButton(withTitle: "OK")
