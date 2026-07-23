@@ -417,9 +417,13 @@ re-run "Merge to Source…"), then offers:
   a pull request against the source's default branch. Only offered when the
   clone has a remote.
 
-If the clone's source isn't a git repository, the dialog explains that
-bringing changes back for non-git projects (a file diff + copy-back) is
-coming soon, rather than offering either strategy.
+If the clone's source isn't a git repository, "Merge to Source…" instead opens
+a **diff modal** (built on `git diff --no-index`) listing the clone's
+changed and new files, each with a per-file line-diff preview. Bring files
+back individually with **Replace** (overwrite the source's file) or
+**Keep Both** (save the clone's copy alongside it as `name 2.ext`) — nothing
+is ever deleted, and overwriting the source is atomic (the original survives
+a failed copy).
 
 `zetty update-clone <name>` still runs just that first sync step — merging
 the source's latest into the clone and leaving conflicts in place to

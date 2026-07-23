@@ -292,8 +292,17 @@ offering **Merge updates** (`CloneRunner.mergeUpdates` — reuses
 and merges there locally; refuses on a dirty source, and aborts cleanly
 leaving the source untouched if that merge conflicts) and, when available,
 **Push to branch** (`CloneRunner.pushBranch` — same sync step, then `git push
--u origin <branch>` from the clone for a PR). A non-git source shows a
-"coming soon" placeholder instead — file copy-back is Phase 2. The CLI
+-u origin <branch>` from the clone for a PR). A non-git source instead opens the **file
+copy-back diff modal**: pure `FileCopyBack` (ZettyCore) parses `git diff
+--no-index --no-renames --name-status -z <source> <clone>` into added/modified
+`FileChange`s and computes Keep-Both names (`name 2.ext`); the app-layer
+`FileCopyBackRunner` runs that diff plus a per-file `git diff --no-index`
+content preview and, on confirm, copies chosen files into the source
+(overwrites go through a temp file + `replaceItemAt` so the original survives
+a failed copy — nothing is ever deleted); `FileCopyBackSheet` is the modal
+itself, listing each changed/new file with its line-diff preview and a
+per-file **Replace**/**Keep Both** choice, launched from the non-git branch of
+`presentMergeToSourceChooser`. The CLI
 `update-clone <name>` verb is UNCHANGED: it still drives only the shared sync
 step (`CloneRunner.updateFromSource`) and is routed as a **slow verb**
 alongside `clone`/`capture`/`quit`/`removeProject` (plan on main via
