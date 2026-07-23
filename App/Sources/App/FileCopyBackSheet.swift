@@ -191,9 +191,28 @@ final class FileCopyBackSheet: NSObject, NSTableViewDataSource, NSTableViewDeleg
 
     // MARK: - Diff rendering
 
+    /// Computes the per-file diff OFF the main thread (git subprocess can block
+    /// on a large file), then renders it on main — but only if the same row is
+    /// still selected, so a fast reselection can't paint a stale diff.
     private func renderDiff(for row: Row) {
-        let text = FileCopyBackRunner.contentDiff(sourceRoot: sourceRoot, cloneRoot: cloneRoot,
-                                                  relPath: row.change.relPath, kind: row.change.kind)
+        let relPath = row.change.relPath
+        let kind = row.change.kind
+        renderPlain("Loading diff…")
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let text = FileCopyBackRunner.contentDiff(sourceRoot: self.sourceRoot,
+                                                      cloneRoot: self.cloneRoot,
+                                                      relPath: relPath, kind: kind)
+            DispatchQueue.main.async {
+                let selected = self.table.selectedRow
+                guard self.rows.indices.contains(selected),
+                      self.rows[selected].change.relPath == relPath else { return }
+                self.applyDiffText(text)
+            }
+        }
+    }
+
+    private func applyDiffText(_ text: String) {
         let result = NSMutableAttributedString()
         let mono = ZTheme.monoFont(size: 11)
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
